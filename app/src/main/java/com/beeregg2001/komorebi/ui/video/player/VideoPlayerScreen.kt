@@ -16,9 +16,13 @@ import androidx.annotation.RequiresApi
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.focus.*
@@ -157,6 +161,8 @@ fun VideoPlayerScreen(
     var isDownKeyLongPressed by remember { mutableStateOf(false) }
     // 非公式パッチ: ←/→ 長押しの連続シーク用スロットル (前回シークした時刻)
     var lastRepeatSeekTime by remember { mutableLongStateOf(0L) }
+    // 非公式パッチ: CM自動スキップの控えめな通知の表示状態 (左下に小さく表示して自動で消える)
+    var showCmSkipNotice by remember { mutableStateOf(false) }
 
     LaunchedEffect(program.recordedVideo.id) {
         allComments.clear()
@@ -339,13 +345,22 @@ fun VideoPlayerScreen(
                     val endMs = (crossed.endTime * 1000).toLong()
                     if (endMs > position) {
                         exoPlayer.seekTo(endMs)
-                        vs.updateIndicator(Icons.Default.SkipNext, "CMスキップ")
+                        // 画面中央の大きなインジケータではなく、左下の控えめな通知だけ出す
+                        showCmSkipNotice = true
                         previousPosition = endMs
                         continue
                     }
                 }
             }
             previousPosition = position
+        }
+    }
+
+    // 非公式パッチ: CM自動スキップ通知を1.5秒後に自動で消す
+    LaunchedEffect(showCmSkipNotice) {
+        if (showCmSkipNotice) {
+            delay(1500)
+            showCmSkipNotice = false
         }
     }
 
@@ -750,6 +765,19 @@ fun VideoPlayerScreen(
                 )
             }
             PlaybackIndicator(vs.indicatorState)
+            // 非公式パッチ: CM自動スキップの控えめな通知 (左下に小さく表示)
+            if (showCmSkipNotice) {
+                Text(
+                    text = "CMスキップ",
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 14.sp,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 24.dp, bottom = 24.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                )
+            }
         }
     }
 
