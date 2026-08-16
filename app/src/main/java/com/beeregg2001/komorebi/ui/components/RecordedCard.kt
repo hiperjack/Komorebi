@@ -50,7 +50,9 @@ fun RecordedCard(
 ) {
     val colors = KomorebiTheme.colors
     var isFocused by remember { mutableStateOf(false) }
-    val isAnalyzed = program.recordedVideo.hasKeyFrames
+    // 非公式パッチ: 新しい KonomiTV は has_key_frames を廃止し録画完了後すぐ再生可能なため、
+    // 解析失敗 (AnalysisFailed) の録画だけを再生不可として扱う
+    val isAnalyzed = program.recordedVideo.status != "AnalysisFailed"
 
     // スクロール状態の読み取り（スクロールが開始・停止した時だけ再評価される）
     val scrolling = isScrolling()

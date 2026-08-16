@@ -56,7 +56,9 @@ fun RecordListItem(
     val isCurrentlyRecording = program.isRecording || program.recordedVideo.status == "Recording"
 
     // 録画中は選択不可（非アクティブ）にするため、条件を「かつ録画中でないか」に変更
-    val isAnalyzed = program.recordedVideo.hasKeyFrames && !isCurrentlyRecording
+    // 非公式パッチ: 新しい KonomiTV は has_key_frames を廃止し録画完了後すぐ再生可能なため、
+    // 解析失敗 (AnalysisFailed) の録画だけを再生不可として扱う
+    val isAnalyzed = program.recordedVideo.status != "AnalysisFailed" && !isCurrentlyRecording
 
     val isVisualFocused = isFocused || isPersistentFocused
 

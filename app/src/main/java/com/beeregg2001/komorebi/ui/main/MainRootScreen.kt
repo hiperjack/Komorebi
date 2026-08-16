@@ -613,7 +613,7 @@ fun MainRootScreen(
                                         konomiIp = konomiIp, konomiPort = konomiPort,
                                         customTitle = state.openedSeriesTitle,
                                         onProgramClick = { program, forcedPosition ->
-                                            if (!program.recordedVideo.hasKeyFrames) return@RecordListScreen
+                                            if (program.recordedVideo.status == "AnalysisFailed") return@RecordListScreen
                                             val duration = program.recordedVideo.duration
                                             val history =
                                                 watchHistory.find { it.program.id.toString() == program.id.toString() }
@@ -753,7 +753,7 @@ fun MainRootScreen(
                                         selectedProgram = state.selectedProgram,
                                         onProgramSelected = { program ->
                                             if (program != null) {
-                                                if (!program.recordedVideo.hasKeyFrames) return@HomeLauncherScreen
+                                                if (program.recordedVideo.status == "AnalysisFailed") return@HomeLauncherScreen
                                                 val history =
                                                     watchHistory.find { it.program.id.toString() == program.id.toString() }
                                                 val duration = program.recordedVideo.duration
