@@ -50,6 +50,7 @@ import com.beeregg2001.komorebi.data.model.ArchivedComment
 import com.beeregg2001.komorebi.data.model.AudioMode
 import com.beeregg2001.komorebi.ui.theme.KomorebiTheme
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -154,6 +155,8 @@ fun VideoPlayerScreen(
     var isLeftKeyLongPressed by remember { mutableStateOf(false) }
     var downKeyDownTime by remember { mutableLongStateOf(0L) }
     var isDownKeyLongPressed by remember { mutableStateOf(false) }
+    // 非公式パッチ: ←/→ 長押しの連続シーク用スロットル (前回シークした時刻)
+    var lastRepeatSeekTime by remember { mutableLongStateOf(0L) }
 
     LaunchedEffect(program.recordedVideo.id) {
         allComments.clear()
@@ -316,6 +319,36 @@ fun VideoPlayerScreen(
         }
     }
 
+    // 非公式パッチ: CM 自動スキップ
+    // 再生位置が CM 区間の先頭を「自然再生で跨いだ」ときだけ、区間末尾へ自動ジャンプする。
+    // 跨ぎ判定 (前回位置と現在位置の差が小さい) にすることで、手動シークで CM 区間の
+    // 途中に入った場合は発動せず、見たい位置を勝手に飛ばさない
+    LaunchedEffect(currentProgram, exoPlayer) {
+        var previousPosition = exoPlayer.currentPosition
+        while (isActive) {
+            delay(250)
+            val position = exoPlayer.currentPosition
+            if (exoPlayer.isPlaying) {
+                val mergedCms = mergeCmSections(currentProgram.recordedVideo.cmSections)
+                val crossed = mergedCms.firstOrNull { cm ->
+                    val startMs = (cm.startTime * 1000).toLong()
+                    // 前回位置が CM 開始より前 → 現在位置が CM 開始以降、かつ自然再生の進み幅 (2秒未満) の場合のみ
+                    previousPosition < startMs && position >= startMs && (position - previousPosition) < 2000
+                }
+                if (crossed != null) {
+                    val endMs = (crossed.endTime * 1000).toLong()
+                    if (endMs > position) {
+                        exoPlayer.seekTo(endMs)
+                        vs.updateIndicator(Icons.Default.SkipNext, "CMスキップ")
+                        previousPosition = endMs
+                        continue
+                    }
+                }
+            }
+            previousPosition = position
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -371,6 +404,8 @@ fun VideoPlayerScreen(
                         true
                     }
 
+                    // 非公式パッチ: → は短押し・長押しとも +30秒シーク (長押し中は一定間隔でくり返し送る)
+                    // チャプター移動は ▶▶ (KEYCODE_MEDIA_FAST_FORWARD) に割り当て直した
                     NativeKeyEvent.KEYCODE_DPAD_RIGHT -> {
                         if (isActionDown) {
                             if (repeatCount == 0) {
@@ -378,26 +413,19 @@ fun VideoPlayerScreen(
                                 isRightKeyLongPressed = false
                             } else {
                                 val elapsed = System.currentTimeMillis() - rightKeyDownTime
-                                if (!isRightKeyLongPressed && elapsed > 500) {
+                                if (elapsed > 500) {
                                     isRightKeyLongPressed = true
-                                    onShowControlsChange(true)
-                                    val duration = exoPlayer.duration.coerceAtLeast(1L)
-                                    val mergedCms =
-                                        mergeCmSections(currentProgram.recordedVideo.cmSections)
-                                    val boundaries = getChapterBoundaries(duration, mergedCms)
-                                    if (boundaries.size <= 2) {
+                                    // 長押し中は 400ms ごとに +30秒 (Fire TV 標準の早送りに近い操作感)
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastRepeatSeekTime > 400) {
+                                        lastRepeatSeekTime = now
+                                        onShowControlsChange(true)
                                         exoPlayer.seekTo(
-                                            (exoPlayer.currentPosition + 180_000).coerceAtMost(
-                                                duration
+                                            (exoPlayer.currentPosition + 30000).coerceAtMost(
+                                                exoPlayer.duration.coerceAtLeast(1L)
                                             )
                                         )
-                                        vs.updateIndicator(Icons.Default.FastForward, "+3m")
-                                    } else {
-                                        val currentPos = exoPlayer.currentPosition
-                                        val nextBoundary =
-                                            boundaries.firstOrNull { it > currentPos + 1000 }
-                                        exoPlayer.seekTo(nextBoundary ?: duration)
-                                        vs.updateIndicator(Icons.Default.SkipNext, "次チャプター")
+                                        vs.updateIndicator(Icons.Default.FastForward, "+30s")
                                     }
                                 }
                             }
@@ -414,6 +442,8 @@ fun VideoPlayerScreen(
                         true
                     }
 
+                    // 非公式パッチ: ← は短押し・長押しとも -10秒シーク (長押し中は一定間隔でくり返し戻す)
+                    // チャプター移動は ◀◀ (KEYCODE_MEDIA_REWIND) に割り当て直した
                     NativeKeyEvent.KEYCODE_DPAD_LEFT -> {
                         if (isActionDown) {
                             if (repeatCount == 0) {
@@ -421,29 +451,17 @@ fun VideoPlayerScreen(
                                 isLeftKeyLongPressed = false
                             } else {
                                 val elapsed = System.currentTimeMillis() - leftKeyDownTime
-                                if (!isLeftKeyLongPressed && elapsed > 500) {
+                                if (elapsed > 500) {
                                     isLeftKeyLongPressed = true
-                                    onShowControlsChange(true)
-                                    val duration = exoPlayer.duration.coerceAtLeast(1L)
-                                    val mergedCms =
-                                        mergeCmSections(currentProgram.recordedVideo.cmSections)
-                                    val boundaries = getChapterBoundaries(duration, mergedCms)
-                                    if (boundaries.size <= 2) {
+                                    // 長押し中は 400ms ごとに -10秒
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastRepeatSeekTime > 400) {
+                                        lastRepeatSeekTime = now
+                                        onShowControlsChange(true)
                                         exoPlayer.seekTo(
-                                            (exoPlayer.currentPosition - 60_000).coerceAtLeast(
-                                                0L
-                                            )
+                                            (exoPlayer.currentPosition - 10000).coerceAtLeast(0L)
                                         )
-                                        vs.updateIndicator(Icons.Default.FastRewind, "-1m")
-                                    } else {
-                                        val currentPos = exoPlayer.currentPosition
-                                        val prevBoundary =
-                                            boundaries.lastOrNull { it < currentPos - 1000 }
-                                        exoPlayer.seekTo(prevBoundary ?: 0L)
-                                        vs.updateIndicator(
-                                            Icons.Default.SkipPrevious,
-                                            "前チャプター"
-                                        )
+                                        vs.updateIndicator(Icons.Default.FastRewind, "-10s")
                                     }
                                 }
                             }
@@ -456,6 +474,54 @@ fun VideoPlayerScreen(
                             }
                             leftKeyDownTime = 0L
                             isLeftKeyLongPressed = false
+                        }
+                        true
+                    }
+
+                    // 非公式パッチ: ◀◀ / ▶▶ (メディアキー) でチャプター移動
+                    // チャプター境界は KonomiTV の cm_sections から作られる (境界が無い録画は固定秒数にフォールバック)
+                    NativeKeyEvent.KEYCODE_MEDIA_FAST_FORWARD, NativeKeyEvent.KEYCODE_MEDIA_NEXT -> {
+                        if (isActionDown && repeatCount == 0) {
+                            onShowControlsChange(true)
+                            val duration = exoPlayer.duration.coerceAtLeast(1L)
+                            val mergedCms =
+                                mergeCmSections(currentProgram.recordedVideo.cmSections)
+                            val boundaries = getChapterBoundaries(duration, mergedCms)
+                            if (boundaries.size <= 2) {
+                                exoPlayer.seekTo(
+                                    (exoPlayer.currentPosition + 180_000).coerceAtMost(duration)
+                                )
+                                vs.updateIndicator(Icons.Default.FastForward, "+3m")
+                            } else {
+                                val currentPos = exoPlayer.currentPosition
+                                val nextBoundary =
+                                    boundaries.firstOrNull { it > currentPos + 1000 }
+                                exoPlayer.seekTo(nextBoundary ?: duration)
+                                vs.updateIndicator(Icons.Default.SkipNext, "次チャプター")
+                            }
+                        }
+                        true
+                    }
+
+                    NativeKeyEvent.KEYCODE_MEDIA_REWIND, NativeKeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                        if (isActionDown && repeatCount == 0) {
+                            onShowControlsChange(true)
+                            val duration = exoPlayer.duration.coerceAtLeast(1L)
+                            val mergedCms =
+                                mergeCmSections(currentProgram.recordedVideo.cmSections)
+                            val boundaries = getChapterBoundaries(duration, mergedCms)
+                            if (boundaries.size <= 2) {
+                                exoPlayer.seekTo(
+                                    (exoPlayer.currentPosition - 60_000).coerceAtLeast(0L)
+                                )
+                                vs.updateIndicator(Icons.Default.FastRewind, "-1m")
+                            } else {
+                                val currentPos = exoPlayer.currentPosition
+                                val prevBoundary =
+                                    boundaries.lastOrNull { it < currentPos - 1000 }
+                                exoPlayer.seekTo(prevBoundary ?: 0L)
+                                vs.updateIndicator(Icons.Default.SkipPrevious, "前チャプター")
+                            }
                         }
                         true
                     }

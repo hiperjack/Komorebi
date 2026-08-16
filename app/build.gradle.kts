@@ -46,10 +46,30 @@ android {
     // 指定しない場合は最新が使われますが、固定したほうがビルドが安定します
     // ndkVersion = "25.1.8937393"
 
+    // 非公式パッチ: 自前署名の release ビルド用 signingConfig
+    // キーストアはリポジトリ外に置き、~/.gradle/gradle.properties の
+    // KOMOREBI_KEYSTORE_PATH / KOMOREBI_KEYSTORE_PASS / KOMOREBI_KEY_ALIAS から読む。
+    // プロパティが無い環境では従来通り未署名 release になる (本家の挙動を変えない)
+    val keystorePath = (findProperty("KOMOREBI_KEYSTORE_PATH") as String?)
+    if (keystorePath != null && file(keystorePath).exists()) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = findProperty("KOMOREBI_KEYSTORE_PASS") as String?
+                keyAlias = (findProperty("KOMOREBI_KEY_ALIAS") as String?) ?: "komorebi"
+                keyPassword = findProperty("KOMOREBI_KEYSTORE_PASS") as String?
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // 非公式パッチ: キーストアが設定されている場合のみ自前署名を適用する
+            if (keystorePath != null && file(keystorePath).exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
