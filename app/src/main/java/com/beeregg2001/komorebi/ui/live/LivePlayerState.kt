@@ -155,6 +155,21 @@ class LivePlayerState(
             this.lastInteractionTime = System.currentTimeMillis()
         }
 
+        // 非公式パッチ: CH+/CH- (チャンネルボタン) でチャンネル送り
+        // ミニ番組表と同じ並び (グループ順の平坦リスト) で前後のチャンネルへ切り替える。端はループ
+        if (keyCode == android.view.KeyEvent.KEYCODE_CHANNEL_UP || keyCode == android.view.KeyEvent.KEYCODE_CHANNEL_DOWN) {
+            if (isActionDown && repeatCount == 0) {
+                val flatChannels = groupedChannels.values.flatten()
+                if (flatChannels.size >= 2) {
+                    val currentIndex = flatChannels.indexOfFirst { it.id == currentChannelItem.id }
+                    val delta = if (keyCode == android.view.KeyEvent.KEYCODE_CHANNEL_UP) 1 else -1
+                    val nextIndex = (currentIndex + delta + flatChannels.size) % flatChannels.size
+                    onChannelSelect(flatChannels[nextIndex])
+                }
+            }
+            return true
+        }
+
         if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER || keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
             if (isActionDown) {
                 if (keyEvent.nativeKeyEvent.repeatCount > 0 && !isCenterLongPressHandled) {

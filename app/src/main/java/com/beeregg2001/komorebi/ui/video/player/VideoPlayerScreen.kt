@@ -61,6 +61,9 @@ import java.util.UUID
 private const val TAG = "VideoPlayerScreen"
 private const val DEBUG_TAG = "ChapterDebug"
 
+// 非公式パッチ: CH+/CH- (チャンネルボタン) で切り替える再生速度の段階
+private val PLAYBACK_SPEEDS = listOf(1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+
 @UnstableApi
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
@@ -163,6 +166,8 @@ fun VideoPlayerScreen(
     var lastRepeatSeekTime by remember { mutableLongStateOf(0L) }
     // 非公式パッチ: CM自動スキップの控えめな通知の表示状態 (左下に小さく表示して自動で消える)
     var showCmSkipNotice by remember { mutableStateOf(false) }
+    // 非公式パッチ: 現在の再生速度 (PLAYBACK_SPEEDS のインデックス。CH+/CH- で変更する)
+    var playbackSpeedIndex by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(program.recordedVideo.id) {
         allComments.clear()
@@ -364,6 +369,12 @@ fun VideoPlayerScreen(
         }
     }
 
+    // 非公式パッチ: 再生速度の適用
+    // 画質切替でプレイヤーが作り直された場合も、選択中の速度を新しいプレイヤーに引き継ぐ
+    LaunchedEffect(exoPlayer, playbackSpeedIndex) {
+        exoPlayer.playbackParameters = PlaybackParameters(PLAYBACK_SPEEDS[playbackSpeedIndex])
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -537,6 +548,23 @@ fun VideoPlayerScreen(
                                 exoPlayer.seekTo(prevBoundary ?: 0L)
                                 vs.updateIndicator(Icons.Default.SkipPrevious, "前チャプター")
                             }
+                        }
+                        true
+                    }
+
+                    // 非公式パッチ: CH+/CH- (チャンネルボタン) で再生速度を変更 (1.0 → 1.25 → 1.5 → 1.75 → 2.0)
+                    NativeKeyEvent.KEYCODE_CHANNEL_UP -> {
+                        if (isActionDown && repeatCount == 0) {
+                            if (playbackSpeedIndex < PLAYBACK_SPEEDS.lastIndex) playbackSpeedIndex++
+                            vs.updateIndicator(Icons.Default.Speed, "${PLAYBACK_SPEEDS[playbackSpeedIndex]}倍速")
+                        }
+                        true
+                    }
+
+                    NativeKeyEvent.KEYCODE_CHANNEL_DOWN -> {
+                        if (isActionDown && repeatCount == 0) {
+                            if (playbackSpeedIndex > 0) playbackSpeedIndex--
+                            vs.updateIndicator(Icons.Default.Speed, "${PLAYBACK_SPEEDS[playbackSpeedIndex]}倍速")
                         }
                         true
                     }
