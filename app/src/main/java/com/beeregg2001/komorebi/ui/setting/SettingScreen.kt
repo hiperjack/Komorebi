@@ -480,6 +480,8 @@ fun SettingsScreen(
                             "SUMMER", "SUMMER_LIGHT" -> "SUMMER"
                             "AUTUMN", "AUTUMN_LIGHT" -> "AUTUMN"
                             "WINTER_DARK", "WINTER_LIGHT" -> "WINTER"
+                            // 非公式パッチ: EPGStation 風の青系テーマ
+                            "EPG_BLUE", "EPG_BLUE_LIGHT" -> "BLUE"
                             else -> "DEFAULT"
                         }
 
@@ -520,7 +522,9 @@ fun SettingsScreen(
                                         AppStrings.SETTINGS_VALUE_SEASON_SPRING to "SPRING",
                                         AppStrings.SETTINGS_VALUE_SEASON_SUMMER to "SUMMER",
                                         AppStrings.SETTINGS_VALUE_SEASON_AUTUMN to "AUTUMN",
-                                        AppStrings.SETTINGS_VALUE_SEASON_WINTER to "WINTER"
+                                        AppStrings.SETTINGS_VALUE_SEASON_WINTER to "WINTER",
+                                        // 非公式パッチ: EPGStation 風の青系テーマ
+                                        AppStrings.SETTINGS_VALUE_SEASON_BLUE to "BLUE"
                                     ),
                                     currentSeason
                                 ) {

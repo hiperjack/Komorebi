@@ -254,6 +254,8 @@ object AppStrings {
     const val SETTINGS_VALUE_SEASON_AUTUMN = "秋"
     const val SETTINGS_VALUE_SEASON_WINTER = "冬"
     const val SETTINGS_VALUE_SEASON_DEFAULT = "デフォルト"
+    // 非公式パッチ: EPGStation 風の青系テーマ
+    const val SETTINGS_VALUE_SEASON_BLUE = "ブルー (EPGStation風)"
 
     // ★追加: 起動時のチャンネル設定
     const val SETTINGS_ITEM_STARTUP_TAB = "起動時のデフォルトタブ"

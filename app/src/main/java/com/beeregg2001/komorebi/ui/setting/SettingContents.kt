@@ -464,7 +464,7 @@ fun HomeDisplaySettingsContent(
                     },
                 onClick = { onClick(modeR); onMode() })
             val seasonLabel = when (themeSeason) {
-                "SPRING" -> AppStrings.SETTINGS_VALUE_SEASON_SPRING; "SUMMER" -> AppStrings.SETTINGS_VALUE_SEASON_SUMMER; "AUTUMN" -> AppStrings.SETTINGS_VALUE_SEASON_AUTUMN; "WINTER" -> AppStrings.SETTINGS_VALUE_SEASON_WINTER; else -> AppStrings.SETTINGS_VALUE_SEASON_DEFAULT
+                "SPRING" -> AppStrings.SETTINGS_VALUE_SEASON_SPRING; "SUMMER" -> AppStrings.SETTINGS_VALUE_SEASON_SUMMER; "AUTUMN" -> AppStrings.SETTINGS_VALUE_SEASON_AUTUMN; "WINTER" -> AppStrings.SETTINGS_VALUE_SEASON_WINTER; "BLUE" -> AppStrings.SETTINGS_VALUE_SEASON_BLUE; else -> AppStrings.SETTINGS_VALUE_SEASON_DEFAULT
             }
             SettingItem(
                 AppStrings.SETTINGS_ITEM_THEME_COLOR,
