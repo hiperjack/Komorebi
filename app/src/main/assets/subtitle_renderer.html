@@ -27,6 +27,21 @@
 <script>
     const Aribb24Lib = window.aribb24;
     let controller, renderer, feeder;
+
+    // 非公式パッチ: ?font= クエリで字幕フォントを切り替える
+    // "arib" = 同梱の Rounded M+ 1m for ARIB (丸ゴシック・ARIB外字対応)
+    let subtitleFontFamily = '"Noto Sans JP", "Hiragino Sans", sans-serif';
+    async function prepareFont() {
+        const fontParam = new URLSearchParams(window.location.search).get('font');
+        if (fontParam === 'arib') {
+            try {
+                const ff = new FontFace('Rounded M+ 1m for ARIB', "url('./fonts/rounded-mplus-1m-arib.ttf')");
+                await ff.load();
+                document.fonts.add(ff);
+                subtitleFontFamily = '"Rounded M+ 1m for ARIB", "Noto Sans JP", sans-serif';
+            } catch (e) { console.error("Subtitle Font Load Error", e); }
+        }
+    }
     const dummyVideo = document.createElement('video');
     dummyVideo.muted = true;
     dummyVideo.playsInline = true;
@@ -37,7 +52,7 @@
             controller = new Aribb24Lib.Controller();
             feeder = new Aribb24Lib.MPEGTSFeeder();
             renderer = new Aribb24Lib.CanvasMainThreadRenderer({
-                font: { normal: '"Noto Sans JP", "Hiragino Sans", sans-serif' },
+                font: { normal: subtitleFontFamily },
                 forceFullWindow: true,
                 enableAutoInvisibility: true
             });
@@ -86,7 +101,7 @@
         } catch (e) {}
     };
     window.onresize = updateSize;
-    window.onload = initRenderer;
+    window.onload = async function() { await prepareFont(); initRenderer(); };
 </script>
 </body>
 </html>

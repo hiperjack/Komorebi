@@ -85,6 +85,8 @@ class SettingsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "OFF")
     val videoSubtitleDefault: StateFlow<String> = settingsRepository.videoSubtitleDefault
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "OFF")
+    val subtitleFont: StateFlow<String> = settingsRepository.subtitleFont
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "default")
     val subtitleCommentLayer: StateFlow<String> = settingsRepository.subtitleCommentLayer
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "CommentOnTop")
 

@@ -37,6 +37,8 @@ class SettingsRepository @Inject constructor(
         val VIDEO_QUALITY = stringPreferencesKey("video_quality")
         val LIVE_SUBTITLE_DEFAULT = stringPreferencesKey("live_subtitle_default")
         val VIDEO_SUBTITLE_DEFAULT = stringPreferencesKey("video_subtitle_default")
+        // 非公式パッチ: 字幕フォント ("default" | "arib" = Rounded M+ 1m for ARIB)
+        val SUBTITLE_FONT = stringPreferencesKey("subtitle_font")
         val SUBTITLE_COMMENT_LAYER = stringPreferencesKey("subtitle_comment_layer")
         val AUDIO_OUTPUT_MODE = stringPreferencesKey("audio_output_mode")
 
@@ -89,6 +91,8 @@ class SettingsRepository @Inject constructor(
         context.dataStore.data.map { it[LIVE_SUBTITLE_DEFAULT] ?: "ON" }
     val videoSubtitleDefault: Flow<String> =
         context.dataStore.data.map { it[VIDEO_SUBTITLE_DEFAULT] ?: "ON" }
+    val subtitleFont: Flow<String> =
+        context.dataStore.data.map { it[SUBTITLE_FONT] ?: "default" }
     val subtitleCommentLayer: Flow<String> =
         context.dataStore.data.map { it[SUBTITLE_COMMENT_LAYER] ?: "COMMENT_TOP" }
     val audioOutputMode: Flow<String> =

@@ -105,7 +105,8 @@ fun SettingsScreen(
                 FocusRequester(),
                 FocusRequester(),
                 FocusRequester(),
-                FocusRequester()
+                FocusRequester(),
+                FocusRequester() // 非公式パッチ: 字幕フォント選択の追加分
             ), // 2: Playback
             listOf(FocusRequester()), // 3: Recording
             listOf(
@@ -355,12 +356,14 @@ fun SettingsScreen(
                         videoQ = prefs.videoQuality,
                         liveSub = prefs.liveSubtitleDefault,
                         videoSub = prefs.videoSubtitleDefault,
+                        subtitleFont = prefs.subtitleFont,
                         layerOrder = prefs.subtitleCommentLayer,
                         audioMode = prefs.audioOutputMode,
                         liveR = itemFocusRequesters[2][0],
                         videoR = itemFocusRequesters[2][1],
                         liveSubR = itemFocusRequesters[2][2],
                         videoSubR = itemFocusRequesters[2][3],
+                        subtitleFontR = itemFocusRequesters[2][6],
                         audioR = itemFocusRequesters[2][4],
                         layerR = itemFocusRequesters[2][5],
                         sidebarR = categoryFocusRequesters[2],
@@ -406,6 +409,23 @@ fun SettingsScreen(
                                     SettingsRepository.VIDEO_SUBTITLE_DEFAULT,
                                     if (prefs.videoSubtitleDefault == "ON") "OFF" else "ON"
                                 )
+                            }
+                        },
+                        onSubtitleFont = {
+                            uiState.activeDialog = SettingDialogState.Selection(
+                                AppStrings.DIALOG_SUBTITLE_FONT_TITLE,
+                                listOf(
+                                    AppStrings.SETTINGS_VALUE_FONT_DEFAULT to "default",
+                                    AppStrings.SETTINGS_VALUE_FONT_ARIB to "arib"
+                                ),
+                                prefs.subtitleFont
+                            ) {
+                                scope.launch {
+                                    repository.saveString(
+                                        SettingsRepository.SUBTITLE_FONT,
+                                        it
+                                    )
+                                }
                             }
                         },
                         onLayer = {

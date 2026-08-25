@@ -139,6 +139,8 @@ fun LivePlayerScreen(
     val subtitleCommentLayer by settingsViewModel.subtitleCommentLayer.collectAsState()
     val audioOutputMode by settingsViewModel.audioOutputMode.collectAsState()
     val liveSubtitleDefaultStr by settingsViewModel.liveSubtitleDefault.collectAsState()
+    // 非公式パッチ: 字幕フォント設定 (subtitle_renderer.html にクエリで渡す)
+    val subtitleFontStr by settingsViewModel.subtitleFont.collectAsState()
 
     val allowMirakurunDual by settingsViewModel.labAllowMirakurunDual.collectAsState()
 
@@ -938,7 +940,8 @@ fun LivePlayerScreen(
                 dualVideoHeight = dualVideoHeight,
                 dualPixelRatio = dualPixelWidthHeightRatio,
                 dualWebViewRef = dualWebViewRef,
-                isSubtitleEnabled = isSubtitleEnabled
+                isSubtitleEnabled = isSubtitleEnabled,
+                subtitleFont = subtitleFontStr
             )
         } else {
             AndroidView(
@@ -996,7 +999,7 @@ fun LivePlayerScreen(
                                 settings.apply {
                                     javaScriptEnabled = true; domStorageEnabled = true
                                 }
-                                loadUrl("file:///android_asset/subtitle_renderer.html")
+                                loadUrl("file:///android_asset/subtitle_renderer.html?font=$subtitleFontStr")
                                 webViewRef.value = this
                             }
                         },

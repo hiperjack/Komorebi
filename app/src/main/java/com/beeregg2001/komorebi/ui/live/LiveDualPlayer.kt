@@ -73,7 +73,9 @@ fun DualDisplayPlayer(
     dualVideoHeight: Int,
     dualPixelRatio: Float,
     dualWebViewRef: MutableState<WebView?>,
-    isSubtitleEnabled: Boolean
+    isSubtitleEnabled: Boolean,
+    // 非公式パッチ: 字幕フォント設定 (subtitle_renderer.html にクエリで渡す)
+    subtitleFont: String = "default"
 ) {
     val colors = KomorebiTheme.colors
     val animatedLeftWeight by animateFloatAsState(
@@ -182,7 +184,7 @@ fun DualDisplayPlayer(
                             layoutParams = ViewGroup.LayoutParams(-1, -1)
                             setBackgroundColor(android.graphics.Color.TRANSPARENT)
                             settings.apply { javaScriptEnabled = true; domStorageEnabled = true }
-                            loadUrl("file:///android_asset/subtitle_renderer.html")
+                            loadUrl("file:///android_asset/subtitle_renderer.html?font=$subtitleFont")
                             mainWebViewRef.value = this
                         }
                     },
@@ -277,7 +279,7 @@ fun DualDisplayPlayer(
                                 settings.apply {
                                     javaScriptEnabled = true; domStorageEnabled = true
                                 }
-                                loadUrl("file:///android_asset/subtitle_renderer.html")
+                                loadUrl("file:///android_asset/subtitle_renderer.html?font=$subtitleFont")
                                 dualWebViewRef.value = this
                             }
                         },

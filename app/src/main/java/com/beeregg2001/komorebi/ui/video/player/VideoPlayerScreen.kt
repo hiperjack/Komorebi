@@ -126,6 +126,8 @@ fun VideoPlayerScreen(
     val commentDefaultDisplayStr by settingsViewModel.commentDefaultDisplay.collectAsState()
     val subtitleCommentLayer by settingsViewModel.subtitleCommentLayer.collectAsState()
     val videoSubtitleDefaultStr by settingsViewModel.videoSubtitleDefault.collectAsState()
+    // 非公式パッチ: 字幕フォント設定 (subtitle_renderer.html にクエリで渡す)
+    val subtitleFontStr by settingsViewModel.subtitleFont.collectAsState()
 
     val commentSpeed = commentSpeedStr.toFloatOrNull() ?: 1.0f
     val commentFontSizeScale = commentFontSizeStr.toFloatOrNull() ?: 1.0f
@@ -722,7 +724,7 @@ fun VideoPlayerScreen(
                                 settings.apply {
                                     javaScriptEnabled = true; domStorageEnabled = true
                                 }
-                                loadUrl("file:///android_asset/subtitle_renderer.html")
+                                loadUrl("file:///android_asset/subtitle_renderer.html?font=$subtitleFontStr")
                                 webViewRef.value = this
                             }
                         },

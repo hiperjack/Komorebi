@@ -316,12 +316,14 @@ fun PlaybackSettingsContent(
     videoQ: String,
     liveSub: String,
     videoSub: String,
+    subtitleFont: String,
     layerOrder: String,
     audioMode: String,
     liveR: FocusRequester,
     videoR: FocusRequester,
     liveSubR: FocusRequester,
     videoSubR: FocusRequester,
+    subtitleFontR: FocusRequester,
     audioR: FocusRequester,
     layerR: FocusRequester,
     sidebarR: FocusRequester,
@@ -329,6 +331,7 @@ fun PlaybackSettingsContent(
     onV: () -> Unit,
     onLiveSub: () -> Unit,
     onVideoSub: () -> Unit,
+    onSubtitleFont: () -> Unit,
     onAudioMode: () -> Unit,
     onLayer: () -> Unit,
     onClick: (FocusRequester) -> Unit
@@ -388,9 +391,22 @@ fun PlaybackSettingsContent(
                     .focusProperties {
                         left = sidebarR
                         up = liveSubR
-                        down = audioR
+                        down = subtitleFontR
                     },
                 onClick = { onClick(videoSubR); onVideoSub() })
+            // 非公式パッチ: 字幕フォント選択 (録画・ライブ共通)
+            SettingItem(
+                AppStrings.SETTINGS_ITEM_SUBTITLE_FONT,
+                if (subtitleFont == "arib") AppStrings.SETTINGS_VALUE_FONT_ARIB else AppStrings.SETTINGS_VALUE_FONT_DEFAULT,
+                Icons.Default.TextFields,
+                modifier = Modifier
+                    .focusRequester(subtitleFontR)
+                    .focusProperties {
+                        left = sidebarR
+                        up = videoSubR
+                        down = audioR
+                    },
+                onClick = { onClick(subtitleFontR); onSubtitleFont() })
             SettingItem(
                 AppStrings.SETTINGS_ITEM_AUDIO_OUTPUT_MODE,
                 if (audioMode == "DOWNMIX") AppStrings.SETTINGS_VALUE_AUDIO_DOWNMIX else AppStrings.SETTINGS_VALUE_AUDIO_PASSTHROUGH,
@@ -399,7 +415,7 @@ fun PlaybackSettingsContent(
                     .focusRequester(audioR)
                     .focusProperties {
                         left = sidebarR
-                        up = videoSubR
+                        up = subtitleFontR
                         down = layerR
                     },
                 onClick = { onClick(audioR); onAudioMode() })
