@@ -168,6 +168,8 @@ fun VideoPlayerScreen(
     var showCmSkipNotice by remember { mutableStateOf(false) }
     // 非公式パッチ: 現在の再生速度 (PLAYBACK_SPEEDS のインデックス。CH+/CH- で変更する)
     var playbackSpeedIndex by remember { mutableIntStateOf(0) }
+    // 非公式パッチ: サブメニューの無操作自動クローズ用 (サブメニュー表示中のキー操作のたびに更新)
+    var subMenuInteractionTime by remember { mutableLongStateOf(0L) }
 
     LaunchedEffect(program.recordedVideo.id) {
         allComments.clear()
@@ -330,6 +332,16 @@ fun VideoPlayerScreen(
         }
     }
 
+    // 非公式パッチ: サブメニューを無操作 5 秒で自動クローズ (キー操作のたびにタイマーをリセット)
+    // 閉じるときはシークバー (コントロール) を出さない
+    LaunchedEffect(isSubMenuOpen, subMenuInteractionTime) {
+        if (isSubMenuOpen) {
+            delay(5_000)
+            onSubMenuToggle(false)
+            onShowControlsChange(false)
+        }
+    }
+
     // 非公式パッチ: CM 自動スキップ
     // 再生位置が CM 区間の先頭を「自然再生で跨いだ」ときだけ、区間末尾へ自動ジャンプする。
     // 跨ぎ判定 (前回位置と現在位置の差が小さい) にすることで、手動シークで CM 区間の
@@ -383,8 +395,6 @@ fun VideoPlayerScreen(
                 // ★ PiPモード中はキーイベントを全てスルー（裏側のホーム画面に処理させる）
                 if (isPiPMode) return@onKeyEvent false
 
-                if (isSubMenuOpen || isSceneSearchOpen || isChapterListOpen) return@onKeyEvent false
-
                 val keyCode = keyEvent.nativeKeyEvent.keyCode
                 val repeatCount = keyEvent.nativeKeyEvent.repeatCount
                 val isActionDown = keyEvent.type == KeyEventType.KeyDown
@@ -393,6 +403,105 @@ fun VideoPlayerScreen(
                 if (isActionDown) {
                     vs.lastInteractionTime = System.currentTimeMillis()
                 }
+
+                // 非公式パッチ: 十字キー/決定のフォーカス操作と競合しないキーは、
+                // オーバーレイ (サブメニュー/シーンサーチ/チャプター一覧) 表示中でも効かせる
+                when (keyCode) {
+                    // 非公式パッチ: ◀◀ / ▶▶ (メディアキー) でチャプター移動
+                    // チャプター境界は KonomiTV の cm_sections から作られる (境界が無い録画は固定秒数にフォールバック)
+                    NativeKeyEvent.KEYCODE_MEDIA_FAST_FORWARD, NativeKeyEvent.KEYCODE_MEDIA_NEXT -> {
+                        if (isActionDown && repeatCount == 0) {
+                            onShowControlsChange(true)
+                            val duration = exoPlayer.duration.coerceAtLeast(1L)
+                            val mergedCms =
+                                mergeCmSections(currentProgram.recordedVideo.cmSections)
+                            val boundaries = getChapterBoundaries(duration, mergedCms)
+                            if (boundaries.size <= 2) {
+                                exoPlayer.seekTo(
+                                    (exoPlayer.currentPosition + 180_000).coerceAtMost(duration)
+                                )
+                                vs.updateIndicator(Icons.Default.FastForward, "+3m")
+                            } else {
+                                val currentPos = exoPlayer.currentPosition
+                                val nextBoundary =
+                                    boundaries.firstOrNull { it > currentPos + 1000 }
+                                exoPlayer.seekTo(nextBoundary ?: duration)
+                                vs.updateIndicator(Icons.Default.SkipNext, "次チャプター")
+                            }
+                        }
+                        return@onKeyEvent true
+                    }
+
+                    NativeKeyEvent.KEYCODE_MEDIA_REWIND, NativeKeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                        if (isActionDown && repeatCount == 0) {
+                            onShowControlsChange(true)
+                            val duration = exoPlayer.duration.coerceAtLeast(1L)
+                            val mergedCms =
+                                mergeCmSections(currentProgram.recordedVideo.cmSections)
+                            val boundaries = getChapterBoundaries(duration, mergedCms)
+                            if (boundaries.size <= 2) {
+                                exoPlayer.seekTo(
+                                    (exoPlayer.currentPosition - 60_000).coerceAtLeast(0L)
+                                )
+                                vs.updateIndicator(Icons.Default.FastRewind, "-1m")
+                            } else {
+                                val currentPos = exoPlayer.currentPosition
+                                val prevBoundary =
+                                    boundaries.lastOrNull { it < currentPos - 1000 }
+                                exoPlayer.seekTo(prevBoundary ?: 0L)
+                                vs.updateIndicator(Icons.Default.SkipPrevious, "前チャプター")
+                            }
+                        }
+                        return@onKeyEvent true
+                    }
+
+                    // 非公式パッチ: CH+/CH- (チャンネルボタン) で再生速度を変更 (1.0 → 1.25 → 1.5 → 1.75 → 2.0)
+                    NativeKeyEvent.KEYCODE_CHANNEL_UP -> {
+                        if (isActionDown && repeatCount == 0) {
+                            if (playbackSpeedIndex < PLAYBACK_SPEEDS.lastIndex) playbackSpeedIndex++
+                            vs.updateIndicator(Icons.Default.Speed, "${PLAYBACK_SPEEDS[playbackSpeedIndex]}倍速")
+                        }
+                        return@onKeyEvent true
+                    }
+
+                    NativeKeyEvent.KEYCODE_CHANNEL_DOWN -> {
+                        if (isActionDown && repeatCount == 0) {
+                            if (playbackSpeedIndex > 0) playbackSpeedIndex--
+                            vs.updateIndicator(Icons.Default.Speed, "${PLAYBACK_SPEEDS[playbackSpeedIndex]}倍速")
+                        }
+                        return@onKeyEvent true
+                    }
+
+                    // 非公式パッチ: ▶❙❙ (再生/一時停止メディアキー) に対応 (本家は未実装)
+                    NativeKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                        if (isActionDown && repeatCount == 0) {
+                            onShowControlsChange(true)
+                            vs.togglePlayPause(exoPlayer.isPlaying)
+                            if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                        }
+                        return@onKeyEvent true
+                    }
+
+                    NativeKeyEvent.KEYCODE_MEDIA_PLAY -> {
+                        if (isActionDown && repeatCount == 0 && !exoPlayer.isPlaying) {
+                            onShowControlsChange(true)
+                            vs.togglePlayPause(false)
+                            exoPlayer.play()
+                        }
+                        return@onKeyEvent true
+                    }
+
+                    NativeKeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                        if (isActionDown && repeatCount == 0 && exoPlayer.isPlaying) {
+                            onShowControlsChange(true)
+                            vs.togglePlayPause(true)
+                            exoPlayer.pause()
+                        }
+                        return@onKeyEvent true
+                    }
+                }
+
+                if (isSubMenuOpen || isSceneSearchOpen || isChapterListOpen) return@onKeyEvent false
 
                 when (keyCode) {
                     // ★ 戻るキー長押しの実装
@@ -500,71 +609,6 @@ fun VideoPlayerScreen(
                             }
                             leftKeyDownTime = 0L
                             isLeftKeyLongPressed = false
-                        }
-                        true
-                    }
-
-                    // 非公式パッチ: ◀◀ / ▶▶ (メディアキー) でチャプター移動
-                    // チャプター境界は KonomiTV の cm_sections から作られる (境界が無い録画は固定秒数にフォールバック)
-                    NativeKeyEvent.KEYCODE_MEDIA_FAST_FORWARD, NativeKeyEvent.KEYCODE_MEDIA_NEXT -> {
-                        if (isActionDown && repeatCount == 0) {
-                            onShowControlsChange(true)
-                            val duration = exoPlayer.duration.coerceAtLeast(1L)
-                            val mergedCms =
-                                mergeCmSections(currentProgram.recordedVideo.cmSections)
-                            val boundaries = getChapterBoundaries(duration, mergedCms)
-                            if (boundaries.size <= 2) {
-                                exoPlayer.seekTo(
-                                    (exoPlayer.currentPosition + 180_000).coerceAtMost(duration)
-                                )
-                                vs.updateIndicator(Icons.Default.FastForward, "+3m")
-                            } else {
-                                val currentPos = exoPlayer.currentPosition
-                                val nextBoundary =
-                                    boundaries.firstOrNull { it > currentPos + 1000 }
-                                exoPlayer.seekTo(nextBoundary ?: duration)
-                                vs.updateIndicator(Icons.Default.SkipNext, "次チャプター")
-                            }
-                        }
-                        true
-                    }
-
-                    NativeKeyEvent.KEYCODE_MEDIA_REWIND, NativeKeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
-                        if (isActionDown && repeatCount == 0) {
-                            onShowControlsChange(true)
-                            val duration = exoPlayer.duration.coerceAtLeast(1L)
-                            val mergedCms =
-                                mergeCmSections(currentProgram.recordedVideo.cmSections)
-                            val boundaries = getChapterBoundaries(duration, mergedCms)
-                            if (boundaries.size <= 2) {
-                                exoPlayer.seekTo(
-                                    (exoPlayer.currentPosition - 60_000).coerceAtLeast(0L)
-                                )
-                                vs.updateIndicator(Icons.Default.FastRewind, "-1m")
-                            } else {
-                                val currentPos = exoPlayer.currentPosition
-                                val prevBoundary =
-                                    boundaries.lastOrNull { it < currentPos - 1000 }
-                                exoPlayer.seekTo(prevBoundary ?: 0L)
-                                vs.updateIndicator(Icons.Default.SkipPrevious, "前チャプター")
-                            }
-                        }
-                        true
-                    }
-
-                    // 非公式パッチ: CH+/CH- (チャンネルボタン) で再生速度を変更 (1.0 → 1.25 → 1.5 → 1.75 → 2.0)
-                    NativeKeyEvent.KEYCODE_CHANNEL_UP -> {
-                        if (isActionDown && repeatCount == 0) {
-                            if (playbackSpeedIndex < PLAYBACK_SPEEDS.lastIndex) playbackSpeedIndex++
-                            vs.updateIndicator(Icons.Default.Speed, "${PLAYBACK_SPEEDS[playbackSpeedIndex]}倍速")
-                        }
-                        true
-                    }
-
-                    NativeKeyEvent.KEYCODE_CHANNEL_DOWN -> {
-                        if (isActionDown && repeatCount == 0) {
-                            if (playbackSpeedIndex > 0) playbackSpeedIndex--
-                            vs.updateIndicator(Icons.Default.Speed, "${PLAYBACK_SPEEDS[playbackSpeedIndex]}倍速")
                         }
                         true
                     }
@@ -707,7 +751,8 @@ fun VideoPlayerScreen(
             PlayerControls(
                 exoPlayer,
                 currentProgram.title,
-                showControls && !isSubMenuOpen && !isSceneSearchOpen && !isChapterListOpen
+                showControls && !isSubMenuOpen && !isSceneSearchOpen && !isChapterListOpen,
+                playbackSpeed = PLAYBACK_SPEEDS[playbackSpeedIndex]
             )
 
             AnimatedVisibility(
@@ -788,7 +833,11 @@ fun VideoPlayerScreen(
                     {
                         vs.isCommentEnabled =
                             !vs.isCommentEnabled; onShowToast("実況: ${if (vs.isCommentEnabled) "表示" else "非表示"}")
-                    }
+                    },
+                    // 非公式パッチ: 下キーで閉じる / 無操作自動クローズのタイマーリセット
+                    // 閉じるときはシークバー (コントロール) を出さない
+                    onClose = { onSubMenuToggle(false); onShowControlsChange(false) },
+                    onInteraction = { subMenuInteractionTime = System.currentTimeMillis() }
                 )
             }
             PlaybackIndicator(vs.indicatorState)

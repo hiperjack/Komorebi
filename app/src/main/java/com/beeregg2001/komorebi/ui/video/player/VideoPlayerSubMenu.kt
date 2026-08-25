@@ -46,7 +46,10 @@ fun VideoTopSubMenuUI(
     onSubtitleToggle: () -> Unit,
     onQualitySelect: (StreamQuality) -> Unit,
     // ★追加: コメント切り替えコールバック
-    onCommentToggle: () -> Unit
+    onCommentToggle: () -> Unit,
+    // 非公式パッチ: 下キーでメニューを閉じる用 / 無操作自動クローズのタイマーリセット用
+    onClose: () -> Unit = {},
+    onInteraction: () -> Unit = {}
 ) {
     // 展開中のカテゴリ管理
     var selectedCategory by remember { mutableStateOf<SubMenuCategory?>(null) }
@@ -79,21 +82,36 @@ fun VideoTopSubMenuUI(
                 )
             )
             .padding(top = 24.dp, bottom = 48.dp)
+            // 非公式パッチ: 無操作自動クローズ用にキー操作を親へ通知 (イベントは消費しない)
+            .onPreviewKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown) onInteraction()
+                false
+            }
             // Backキーで展開を閉じる制御
             .onKeyEvent { keyEvent ->
-                if (keyEvent.type == KeyEventType.KeyDown &&
-                    (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK ||
-                            keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ESCAPE)) {
-                    if (selectedCategory != null) {
-                        selectedCategory = null
-                        // 閉じた時は画質ボタンにフォーカスを戻す
-                        try { qualityButtonRequester.requestFocus() } catch (e: Exception) {}
-                        true
-                    } else {
-                        false
+                if (keyEvent.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (keyEvent.nativeKeyEvent.keyCode) {
+                    KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> {
+                        if (selectedCategory != null) {
+                            selectedCategory = null
+                            // 閉じた時は画質ボタンにフォーカスを戻す
+                            try { qualityButtonRequester.requestFocus() } catch (e: Exception) {}
+                            true
+                        } else {
+                            false
+                        }
                     }
-                } else {
-                    false
+                    // 非公式パッチ: 下キーでメニューを閉じる (戻ると同じ挙動)。
+                    // 画質リスト展開中は下キーを親→リストのフォーカス移動に使うので閉じない
+                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        if (selectedCategory == null) {
+                            onClose()
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    else -> false
                 }
             },
         contentAlignment = Alignment.TopCenter

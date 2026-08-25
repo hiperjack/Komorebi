@@ -24,7 +24,9 @@ import java.util.Locale
 fun PlayerControls(
     exoPlayer: ExoPlayer,
     title: String,
-    isVisible: Boolean
+    isVisible: Boolean,
+    // 非公式パッチ: 総時間の左に表示する現在の再生速度
+    playbackSpeed: Float = 1.0f
 ) {
     var currentPosition by remember { mutableLongStateOf(exoPlayer.currentPosition) }
     var duration by remember { mutableLongStateOf(exoPlayer.duration) }
@@ -84,7 +86,12 @@ fun PlayerControls(
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(text = formatMillisToTime(currentPosition), color = Color.White.copy(alpha = 0.9f))
-                    Text(text = formatMillisToTime(duration), color = Color.White.copy(alpha = 0.9f))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // 非公式パッチ: 現在の再生速度を総時間の左に常時表示
+                        Text(text = "${playbackSpeed}x", color = Color.White.copy(alpha = 0.7f))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(text = formatMillisToTime(duration), color = Color.White.copy(alpha = 0.9f))
+                    }
                 }
             }
         }

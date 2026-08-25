@@ -478,7 +478,10 @@ fun MainRootScreen(
 
             state.isPlayerMiniListOpen -> state.isPlayerMiniListOpen = false
             state.playerIsSubMenuOpen -> state.playerIsSubMenuOpen = false
-            state.isPlayerSubMenuOpen -> state.isPlayerSubMenuOpen = false
+            // 非公式パッチ: サブメニューを閉じるときはシークバー (コントロール) を出さない
+            state.isPlayerSubMenuOpen -> {
+                state.isPlayerSubMenuOpen = false; state.showPlayerControls = false
+            }
             state.isPlayerSceneSearchOpen -> {
                 state.isPlayerSceneSearchOpen = false; state.showPlayerControls = false
             }
