@@ -759,7 +759,7 @@ fun VideoPlayerScreen(
                 enter = slideInVertically { -it } + fadeIn(),
                 exit = slideOutVertically { -it } + fadeOut()) {
                 VideoTopSubMenuUI(
-                    vs.currentAudioMode, vs.currentSpeed, vs.isSubtitleEnabled,
+                    vs.currentAudioMode, PLAYBACK_SPEEDS[playbackSpeedIndex], vs.isSubtitleEnabled,
                     vs.currentQuality, vs.isCommentEnabled, subMenuFocusRequester,
                     {
                         vs.currentAudioMode =
@@ -776,10 +776,9 @@ fun VideoPlayerScreen(
                             .build(); onShowToast("音声: ${if (vs.currentAudioMode == AudioMode.MAIN) "主音声" else "副音声"}")
                     },
                     {
-                        val speeds = listOf(1.0f, 1.5f, 2.0f, 0.8f); vs.currentSpeed =
-                        speeds[(speeds.indexOf(vs.currentSpeed) + 1) % speeds.size]; exoPlayer.setPlaybackSpeed(
-                        vs.currentSpeed
-                    ); onShowToast("速度: ${vs.currentSpeed}x")
+                        // 非公式パッチ: CH+/CH- と同じ PLAYBACK_SPEEDS を循環 (適用は LaunchedEffect 側)
+                        playbackSpeedIndex =
+                            (playbackSpeedIndex + 1) % PLAYBACK_SPEEDS.size; onShowToast("速度: ${PLAYBACK_SPEEDS[playbackSpeedIndex]}x")
                     },
                     {
                         vs.isSubtitleEnabled =
