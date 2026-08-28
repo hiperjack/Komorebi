@@ -169,7 +169,13 @@ fun VideoPlayerScreen(
     // 非公式パッチ: CM自動スキップの控えめな通知の表示状態 (左下に小さく表示して自動で消える)
     var showCmSkipNotice by remember { mutableStateOf(false) }
     // 非公式パッチ: 現在の再生速度 (PLAYBACK_SPEEDS のインデックス。CH+/CH- で変更する)
+    // 設定 (DataStore) に保存された速度から復元し、ファイルをまたいで維持する
     var playbackSpeedIndex by remember { mutableIntStateOf(0) }
+    val videoPlaybackSpeedStr by settingsViewModel.videoPlaybackSpeed.collectAsState()
+    LaunchedEffect(videoPlaybackSpeedStr) {
+        val savedIndex = PLAYBACK_SPEEDS.indexOf(videoPlaybackSpeedStr.toFloatOrNull() ?: 1.0f)
+        if (savedIndex >= 0) playbackSpeedIndex = savedIndex
+    }
     // 非公式パッチ: サブメニューの無操作自動クローズ用 (サブメニュー表示中のキー操作のたびに更新)
     var subMenuInteractionTime by remember { mutableLongStateOf(0L) }
 
@@ -460,7 +466,10 @@ fun VideoPlayerScreen(
                     // 非公式パッチ: CH+/CH- (チャンネルボタン) で再生速度を変更 (1.0 → 1.25 → 1.5 → 1.75 → 2.0)
                     NativeKeyEvent.KEYCODE_CHANNEL_UP -> {
                         if (isActionDown && repeatCount == 0) {
-                            if (playbackSpeedIndex < PLAYBACK_SPEEDS.lastIndex) playbackSpeedIndex++
+                            if (playbackSpeedIndex < PLAYBACK_SPEEDS.lastIndex) {
+                                playbackSpeedIndex++
+                                settingsViewModel.updateVideoPlaybackSpeed(PLAYBACK_SPEEDS[playbackSpeedIndex].toString())
+                            }
                             vs.updateIndicator(Icons.Default.Speed, "${PLAYBACK_SPEEDS[playbackSpeedIndex]}倍速")
                         }
                         return@onKeyEvent true
@@ -468,7 +477,10 @@ fun VideoPlayerScreen(
 
                     NativeKeyEvent.KEYCODE_CHANNEL_DOWN -> {
                         if (isActionDown && repeatCount == 0) {
-                            if (playbackSpeedIndex > 0) playbackSpeedIndex--
+                            if (playbackSpeedIndex > 0) {
+                                playbackSpeedIndex--
+                                settingsViewModel.updateVideoPlaybackSpeed(PLAYBACK_SPEEDS[playbackSpeedIndex].toString())
+                            }
                             vs.updateIndicator(Icons.Default.Speed, "${PLAYBACK_SPEEDS[playbackSpeedIndex]}倍速")
                         }
                         return@onKeyEvent true
@@ -825,7 +837,9 @@ fun VideoPlayerScreen(
                     {
                         // 非公式パッチ: CH+/CH- と同じ PLAYBACK_SPEEDS を循環 (適用は LaunchedEffect 側)
                         playbackSpeedIndex =
-                            (playbackSpeedIndex + 1) % PLAYBACK_SPEEDS.size; onShowToast("速度: ${PLAYBACK_SPEEDS[playbackSpeedIndex]}x")
+                            (playbackSpeedIndex + 1) % PLAYBACK_SPEEDS.size
+                        settingsViewModel.updateVideoPlaybackSpeed(PLAYBACK_SPEEDS[playbackSpeedIndex].toString())
+                        onShowToast("速度: ${PLAYBACK_SPEEDS[playbackSpeedIndex]}x")
                     },
                     {
                         vs.isSubtitleEnabled =

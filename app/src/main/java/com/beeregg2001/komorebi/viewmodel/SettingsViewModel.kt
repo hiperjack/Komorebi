@@ -93,6 +93,15 @@ class SettingsViewModel @Inject constructor(
     val audioOutputMode: StateFlow<String> = settingsRepository.audioOutputMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "DOWNMIX")
 
+    // 非公式パッチ: ビデオ再生速度 (ファイルをまたいで維持する)
+    val videoPlaybackSpeed: StateFlow<String> = settingsRepository.videoPlaybackSpeed
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "1.0")
+
+    // 非公式パッチ: ビデオ再生速度の保存
+    fun updateVideoPlaybackSpeed(value: String) = viewModelScope.launch {
+        settingsRepository.saveString(SettingsRepository.VIDEO_PLAYBACK_SPEED, value)
+    }
+
     val labAnnictIntegration: StateFlow<String> = settingsRepository.labAnnictIntegration
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "OFF")
     val labShobocalIntegration: StateFlow<String> = settingsRepository.labShobocalIntegration

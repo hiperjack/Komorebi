@@ -41,6 +41,8 @@ class SettingsRepository @Inject constructor(
         val SUBTITLE_FONT = stringPreferencesKey("subtitle_font")
         val SUBTITLE_COMMENT_LAYER = stringPreferencesKey("subtitle_comment_layer")
         val AUDIO_OUTPUT_MODE = stringPreferencesKey("audio_output_mode")
+        // 非公式パッチ: ビデオ再生速度 (ファイルをまたいで維持する)
+        val VIDEO_PLAYBACK_SPEED = stringPreferencesKey("video_playback_speed")
 
         val LAB_ANNICT_INTEGRATION = stringPreferencesKey("lab_annict_integration")
         val LAB_SHOBOCAL_INTEGRATION = stringPreferencesKey("lab_shobocal_integration")
@@ -97,6 +99,9 @@ class SettingsRepository @Inject constructor(
         context.dataStore.data.map { it[SUBTITLE_COMMENT_LAYER] ?: "COMMENT_TOP" }
     val audioOutputMode: Flow<String> =
         context.dataStore.data.map { it[AUDIO_OUTPUT_MODE] ?: "DOWNMIX" }
+    // 非公式パッチ: ビデオ再生速度 (ファイルをまたいで維持する)
+    val videoPlaybackSpeed: Flow<String> =
+        context.dataStore.data.map { it[VIDEO_PLAYBACK_SPEED] ?: "1.0" }
 
     val labAnnictIntegration: Flow<String> =
         context.dataStore.data.map { it[LAB_ANNICT_INTEGRATION] ?: "OFF" }
