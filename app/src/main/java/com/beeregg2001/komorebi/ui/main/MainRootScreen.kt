@@ -19,6 +19,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
+import com.beeregg2001.komorebi.data.model.RecordedProgram
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -728,6 +729,26 @@ fun MainRootScreen(
                                 }
 
                                 else -> {
+                                    // 録画番組の再生開始 (録画一覧・番組表の「録画を再生」で共用)。視聴履歴からレジューム位置を復元する
+                                    val startRecordedPlayback: (RecordedProgram) -> Unit = { program ->
+                                        if (program.recordedVideo.status != "AnalysisFailed") {
+                                            val history =
+                                                watchHistory.find { it.program.id.toString() == program.id.toString() }
+                                            val duration = program.recordedVideo.duration
+                                            state.initialPlaybackPositionMs =
+                                                if (history != null && history.playback_position > 5.0 && (duration <= 0.0 || history.playback_position < (duration - 10.0))) {
+                                                    (history.playback_position * 1000).toLong()
+                                                } else 0L
+                                            state.selectedProgram = program
+                                            state.lastSelectedProgramId = program.id.toString()
+                                            state.lastSelectedChannelId = null
+                                            state.showPlayerControls = true
+                                            state.isReturningFromPlayer = false
+                                            state.isMiniPlayerMode = false
+                                        }
+                                    }
+                                    state.startRecordedPlayback = startRecordedPlayback
+
                                     HomeLauncherScreen(
                                         channelViewModel = channelViewModel,
                                         homeViewModel = homeViewModel,
@@ -755,22 +776,7 @@ fun MainRootScreen(
                                         },
                                         selectedProgram = state.selectedProgram,
                                         onProgramSelected = { program ->
-                                            if (program != null) {
-                                                if (program.recordedVideo.status == "AnalysisFailed") return@HomeLauncherScreen
-                                                val history =
-                                                    watchHistory.find { it.program.id.toString() == program.id.toString() }
-                                                val duration = program.recordedVideo.duration
-                                                state.initialPlaybackPositionMs =
-                                                    if (history != null && history.playback_position > 5.0 && (duration <= 0.0 || history.playback_position < (duration - 10.0))) {
-                                                        (history.playback_position * 1000).toLong()
-                                                    } else 0L
-                                                state.selectedProgram = program
-                                                state.lastSelectedProgramId = program.id.toString()
-                                                state.lastSelectedChannelId = null
-                                                state.showPlayerControls = true
-                                                state.isReturningFromPlayer = false
-                                                state.isMiniPlayerMode = false
-                                            }
+                                            if (program != null) startRecordedPlayback(program)
                                         },
                                         onReserveSelected = { reserveItem ->
                                             state.selectedReserve = reserveItem
@@ -825,7 +831,8 @@ fun MainRootScreen(
                                         },
                                         // ★ 追加: AIコンシェルジュ復帰シグナルの伝達
                                         aiFocusReturnTick = state.aiFocusReturnTick,
-                                        onAiReturnConsumed = { state.aiFocusReturnTick = 0 }
+                                        onAiReturnConsumed = { state.aiFocusReturnTick = 0 },
+                                        onShowToast = { state.toastMessage = it }
                                     )
                                 }
                             }
@@ -1094,10 +1101,22 @@ fun MainRootScreen(
             if (state.epgSelectedProgram != null) {
                 val relatedReserve =
                     reserves.find { it.program.id == state.epgSelectedProgram!!.id }
+                // 番組表の番組に対応する録画済み番組をローカルDBから探す (見つかれば「録画を再生」を出す)
+                val epgProgram = state.epgSelectedProgram!!
+                var matchedRecording by remember(epgProgram.id) { mutableStateOf<RecordedProgram?>(null) }
+                LaunchedEffect(epgProgram.id) {
+                    matchedRecording = recordViewModel.findRecordedForEpg(epgProgram)
+                }
                 ProgramDetailScreen(
-                    program = state.epgSelectedProgram!!,
+                    program = epgProgram,
                     mode = ProgramDetailMode.EPG,
                     isReserved = relatedReserve != null,
+                    recordedProgram = matchedRecording,
+                    onPlayRecordedClick = { rec ->
+                        state.epgSelectedProgram = null
+                        state.isEpgJumpMenuOpen = false
+                        state.startRecordedPlayback?.invoke(rec)
+                    },
                     onPlayClick = {
                         val channel =
                             groupedChannels.values.flatten().find { ch -> ch.id == it.channel_id }

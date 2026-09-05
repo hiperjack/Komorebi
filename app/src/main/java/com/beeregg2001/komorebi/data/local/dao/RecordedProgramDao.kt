@@ -62,8 +62,17 @@ interface RecordedProgramDao {
     @Query("SELECT * FROM recorded_programs ORDER BY start_time DESC")
     suspend fun getAllPrograms(): List<RecordedProgramEntity>
 
+    // 番組表の番組に対応する録画の候補 (同じチャンネルで放送時間が重なるもの)。
+    // KonomiTV 由来の ISO8601 文字列 (同一オフセット) 同士の比較なので文字列比較で成立する
+    @Query("SELECT * FROM recorded_programs WHERE channel_id = :channelId AND start_time < :endTime AND end_time > :startTime")
+    suspend fun findOverlapping(channelId: String, startTime: String, endTime: String): List<RecordedProgramEntity>
+
     @Query("SELECT COUNT(id) FROM recorded_programs")
     fun getTotalCountFlow(): kotlinx.coroutines.flow.Flow<Int>
+
+    // 番組表に「録画済み」枠を描くための軽量な一覧 (チャンネルと放送時間だけ)
+    @Query("SELECT id, channel_id AS channelId, start_time AS startTime, end_time AS endTime FROM recorded_programs WHERE channel_id IS NOT NULL")
+    fun getRecordedRangesFlow(): kotlinx.coroutines.flow.Flow<List<RecordedRangeProjection>>
 
     @Query("SELECT DISTINCT channel_id as channelId, channel_type as channelType, channel_name as channelName FROM recorded_programs WHERE channel_id IS NOT NULL")
     suspend fun getDistinctChannels(): List<ChannelProjection>
@@ -137,6 +146,13 @@ interface SyncMetaDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(meta: SyncMetaEntity)
 }
+
+data class RecordedRangeProjection(
+    val id: Int,
+    val channelId: String,
+    val startTime: String,
+    val endTime: String
+)
 
 data class ChannelProjection(
     val channelId: String,

@@ -35,6 +35,8 @@ class MainRootState {
     var selectedProgram by mutableStateOf<RecordedProgram?>(null)
     var initialPlaybackPositionMs by mutableLongStateOf(0L)
     var epgSelectedProgram by mutableStateOf<EpgProgram?>(null)
+    // 録画番組の再生開始処理 (HomeLauncherScreen 表示時に登録。番組表の「録画を再生」から呼ぶ)
+    var startRecordedPlayback: ((RecordedProgram) -> Unit)? = null
 
     // 予約・リスト状態
     var selectedReserve by mutableStateOf<ReserveItem?>(null)

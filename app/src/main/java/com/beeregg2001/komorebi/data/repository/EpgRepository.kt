@@ -12,6 +12,7 @@ import com.beeregg2001.komorebi.data.model.EpgChannel
 import com.beeregg2001.komorebi.data.model.EpgChannelResponse
 import com.beeregg2001.komorebi.data.model.EpgChannelWrapper
 import com.beeregg2001.komorebi.data.model.EpgProgram
+import com.beeregg2001.komorebi.ui.epg.logic.EpgDataMerger
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CancellationException
@@ -53,6 +54,66 @@ class EpgRepository @Inject constructor(
     private val gson: Gson
 ) {
     private val memoryCache = ConcurrentHashMap<String, List<EpgChannelWrapper>>()
+
+    // 放送波ごとの「KonomiTV が保持している最古の番組開始時刻」(timetable API の date_range.earliest)
+    private val earliestAvailable = ConcurrentHashMap<String, OffsetDateTime>()
+
+    fun getEarliestAvailable(channelType: String): OffsetDateTime? = earliestAvailable[channelType]
+
+    private fun rememberDateRange(channelType: String, response: EpgChannelResponse) {
+        val earliest = response.date_range?.earliest ?: return
+        try {
+            earliestAvailable[channelType] = OffsetDateTime.parse(earliest)
+        } catch (e: Exception) { /* ignore */ }
+    }
+
+    /**
+     * 指定範囲 (主に過去方向) の番組表を追加取得し、メモリキャッシュに結合する。
+     * Room の永続キャッシュには保存しない (起動時のデータ量を増やさないため)。
+     * @return 結合後の全データ
+     */
+    @OptIn(UnstableApi::class)
+    @RequiresApi(Build.VERSION_CODES.O)
+    suspend fun fetchAndMergeRange(
+        startTime: OffsetDateTime,
+        endTime: OffsetDateTime,
+        channelType: String
+    ): Result<List<EpgChannelWrapper>> {
+        return try {
+            val formatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
+            val response = apiService.getEpgPrograms(
+                startTime = startTime.format(formatter),
+                endTime = endTime.format(formatter),
+                channelType = channelType
+            )
+            rememberDateRange(channelType, response)
+            val merged = EpgDataMerger.merge(memoryCache[channelType] ?: emptyList(), response.channels)
+            memoryCache[channelType] = merged
+            Result.success(merged)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.e("EPG", "Range Fetch Error: $startTime to $endTime", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * 通常取得 (startTime 以降) の結果に、メモリキャッシュ内の startTime より前の番組 (追加読み込み済みの過去分) を残して結合する。
+     * 通常取得の範囲内は新しい応答を正とし、古いキャッシュの番組は捨てる。
+     */
+    private fun keepExtendedPast(
+        channelType: String,
+        fresh: List<EpgChannelWrapper>,
+        startTime: OffsetDateTime
+    ): List<EpgChannelWrapper> {
+        val old = memoryCache[channelType] ?: return fresh
+        val pastOnly = old.map { w ->
+            w.copy(programs = w.programs.filter { p ->
+                try { OffsetDateTime.parse(p.start_time).isBefore(startTime) } catch (e: Exception) { false }
+            })
+        }.filter { it.programs.isNotEmpty() }
+        return EpgDataMerger.merge(fresh, pastOnly)
+    }
 
     private fun compress(data: String): String {
         val bos = ByteArrayOutputStream()
@@ -238,6 +299,7 @@ class EpgRepository @Inject constructor(
                 endTime = endStr,
                 channelType = channelType
             )
+            rememberDateRange(channelType, response)
             memoryCache[channelType] = response.channels
 
             val rawJson = gson.toJson(response.channels)
@@ -292,9 +354,12 @@ class EpgRepository @Inject constructor(
                 endTime = endStr,
                 channelType = channelType
             )
+            rememberDateRange(channelType, response)
 
-            memoryCache[channelType] = response.channels
-            emit(Result.success(response.channels))
+            // 追加読み込み済みの過去分 (startTime より前) は捨てずに残す
+            val mergedData = keepExtendedPast(channelType, response.channels, startTime)
+            memoryCache[channelType] = mergedData
+            emit(Result.success(mergedData))
 
             CoroutineScope(Dispatchers.IO).launch {
                 val rawJson = gson.toJson(response.channels)

@@ -113,7 +113,8 @@ fun HomeLauncherScreen(
     hasActivePlayer: Boolean = false,
     onReturnToPlayerClick: () -> Unit = {},
     aiFocusReturnTick: Int = 0,
-    onAiReturnConsumed: () -> Unit = {}
+    onAiReturnConsumed: () -> Unit = {},
+    onShowToast: (String) -> Unit = {}
 ) {
     val ui = rememberHomeLauncherState(
         initialTabIndex,
@@ -621,7 +622,8 @@ fun HomeLauncherScreen(
                                 searchResults = epgViewModel.searchResults.collectAsState().value,
                                 isSearching = epgViewModel.isSearching.collectAsState().value,
                                 onClearSearch = { epgViewModel.clearSearch() },
-                                timeFormat = timeFormat
+                                timeFormat = timeFormat,
+                                onShowToast = onShowToast
                             )
                             LaunchedEffect(Unit) {
                                 delay(800); onUiReady(); ui.isCurrentTabContentReady = true

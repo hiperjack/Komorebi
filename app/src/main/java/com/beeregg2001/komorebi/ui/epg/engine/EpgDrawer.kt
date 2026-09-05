@@ -51,7 +51,8 @@ class EpgDrawer(
         isGridFocused: Boolean,
         reserveMap: Map<String, ReserveItem>,
         clockPainter: Painter,
-        timeFormat: String // ★ 追加: SettingsViewModelから渡される時間フォーマット("12H" or "24H")
+        timeFormat: String, // ★ 追加: SettingsViewModelから渡される時間フォーマット("12H" or "24H")
+        recordedIds: Set<String> = emptySet() // 録画済み番組の ID (実線の枠を描く)
     ) {
         with(drawScope) {
             val curX = animValues.scrollX
@@ -250,6 +251,17 @@ class EpgDrawer(
                                         size = Size(config.cwPx - 4f, (ph - 4f).coerceAtLeast(0f)),
                                         cornerRadius = CornerRadius(4f),
                                         style = Stroke(width = 5f, pathEffect = dashEffect)
+                                    )
+                                }
+
+                                // 録画済み番組は実線の枠で示す (予約の点線と区別)
+                                if (!isEmpty && p.id in recordedIds) {
+                                    drawRoundRect(
+                                        color = config.colorRecordedBorder,
+                                        topLeft = Offset(x + 2f, py + 2f),
+                                        size = Size(config.cwPx - 4f, (ph - 4f).coerceAtLeast(0f)),
+                                        cornerRadius = CornerRadius(4f),
+                                        style = Stroke(width = 5f)
                                     )
                                 }
                             }
@@ -456,6 +468,17 @@ class EpgDrawer(
                             size = Size(config.cwPx - 4f, (fh - 4f).coerceAtLeast(0f)),
                             cornerRadius = CornerRadius(4f),
                             style = Stroke(width = 5f, pathEffect = dashEffect)
+                        )
+                    }
+
+                    // 録画済み番組は実線の枠で示す (予約の点線と区別)
+                    if (!isEmpty && p.id in recordedIds) {
+                        drawRoundRect(
+                            color = config.colorRecordedBorder,
+                            topLeft = Offset(fx + 2f, fy + 2f),
+                            size = Size(config.cwPx - 4f, (fh - 4f).coerceAtLeast(0f)),
+                            cornerRadius = CornerRadius(4f),
+                            style = Stroke(width = 5f)
                         )
                     }
 

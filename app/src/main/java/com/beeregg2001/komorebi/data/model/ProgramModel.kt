@@ -20,7 +20,12 @@ data class LiveRowState(
 )
 
 // --- 以下、既存のモデル定義 ---
-data class EpgChannelResponse(val channels: List<EpgChannelWrapper>)
+data class EpgChannelResponse(
+    val channels: List<EpgChannelWrapper>,
+    // KonomiTV が保持している番組データの全範囲 (過去番組表アーカイブ込み)。過去方向の追加読み込みの下限判定に使う
+    val date_range: EpgDateRange? = null
+)
+data class EpgDateRange(val earliest: String, val latest: String)
 data class EpgChannelWrapper(val channel: EpgChannel, val programs: List<EpgProgram>)
 data class EpgChannel(
     val id: String, val display_channel_id: String, val network_id: Int, val service_id: Int,

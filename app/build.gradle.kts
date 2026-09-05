@@ -208,4 +208,7 @@ dependencies {
     implementation("io.ktor:ktor-server-core:2.3.8")
     implementation("io.ktor:ktor-server-cio:2.3.8")
     implementation("com.google.zxing:core:3.5.3")
+
+    // --- JVM 単体テスト (番組表ジャンプ/録画マッチングなどの純粋ロジック用) ---
+    testImplementation("junit:junit:4.13.2")
 }

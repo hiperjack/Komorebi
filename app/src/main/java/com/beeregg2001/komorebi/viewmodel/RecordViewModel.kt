@@ -16,11 +16,13 @@ import com.beeregg2001.komorebi.data.local.dao.RecordedProgramDao
 import com.beeregg2001.komorebi.data.local.dao.SeriesProjection
 import com.beeregg2001.komorebi.data.mapper.RecordDataMapper
 import com.beeregg2001.komorebi.data.model.ArchivedComment
+import com.beeregg2001.komorebi.data.model.EpgProgram
 import com.beeregg2001.komorebi.data.model.RecordedProgram
 import com.beeregg2001.komorebi.data.repository.KonomiRepository
 import com.beeregg2001.komorebi.data.repository.WatchHistoryRepository
 import com.beeregg2001.komorebi.data.sync.RecordSyncEngine
 import com.beeregg2001.komorebi.data.sync.SyncProgress
+import com.beeregg2001.komorebi.ui.epg.logic.RecordedProgramMatcher
 import com.beeregg2001.komorebi.ui.video.components.RecordCategory
 import com.beeregg2001.komorebi.util.TitleNormalizer
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -188,6 +190,35 @@ class RecordViewModel @Inject constructor(
 
     fun clearProgramDetail() {
         _programDetail.value = null
+    }
+
+    /**
+     * 番組表に「録画済み」の枠線を描くための、録画のチャンネル・放送時間の一覧 (ローカルDBの変化に追従)。
+     */
+    val recordedRanges: StateFlow<List<RecordedProgramMatcher.RecordedRange>> =
+        programDao.getRecordedRangesFlow()
+            .map { rows ->
+                rows.map { RecordedProgramMatcher.RecordedRange(it.id, it.channelId, it.startTime, it.endTime) }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * 番組表の番組 (チャンネル + 放送時間) に対応する録画済み番組をローカルDBから探します。
+     * 録画マージンや延長を考慮し、放送時間の半分以上が重なる録画のうち重なりが最大のものを返します。
+     * 詳細 (CM区間など) はプレイヤー側が再生開始時に API から取り直すため、ここでは DB の情報だけで組み立てます。
+     */
+    suspend fun findRecordedForEpg(program: EpgProgram): RecordedProgram? = withContext(Dispatchers.IO) {
+        val candidates = try {
+            programDao.findOverlapping(program.channel_id, program.start_time, program.end_time)
+        } catch (e: Exception) {
+            Log.e(TAG, "findRecordedForEpg failed", e)
+            emptyList()
+        }
+        val best = RecordedProgramMatcher.pickBest(
+            program.start_time, program.end_time,
+            candidates.map { RecordedProgramMatcher.Candidate(it.id, it.startTime, it.endTime) }
+        ) ?: return@withContext null
+        candidates.firstOrNull { it.id == best.id }?.let { RecordDataMapper.toDomainModel(it) }
     }
 
     /**

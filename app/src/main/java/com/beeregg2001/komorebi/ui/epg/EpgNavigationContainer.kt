@@ -50,6 +50,9 @@ import com.beeregg2001.komorebi.common.safeRequestFocus
 import com.beeregg2001.komorebi.data.model.EpgProgram
 import com.beeregg2001.komorebi.data.model.ReserveItem
 import com.beeregg2001.komorebi.ui.epg.components.EpgSearchResultsScreen
+import com.beeregg2001.komorebi.ui.epg.logic.EpgDayJump
+import com.beeregg2001.komorebi.ui.epg.logic.EpgTimeSlots
+import com.beeregg2001.komorebi.viewmodel.EpgViewModel
 import com.beeregg2001.komorebi.viewmodel.EpgUiState
 import com.beeregg2001.komorebi.viewmodel.UiSearchResultItem
 import com.beeregg2001.komorebi.ui.theme.KomorebiTheme
@@ -88,7 +91,8 @@ fun EpgNavigationContainer(
     searchResults: List<UiSearchResultItem>,
     isSearching: Boolean,
     onClearSearch: () -> Unit,
-    timeFormat: String
+    timeFormat: String,
+    onShowToast: (String) -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val colors = KomorebiTheme.colors
@@ -125,6 +129,37 @@ fun EpgNavigationContainer(
         androidx.compose.runtime.mutableStateOf(
             false
         )
+    }
+
+    // 録画済み番組の枠線用: ローカルDBの録画一覧 (チャンネル・放送時間のみ)
+    val recordViewModel: com.beeregg2001.komorebi.viewmodel.RecordViewModel = hiltViewModel()
+    val recordedRanges by recordViewModel.recordedRanges.collectAsState()
+
+    // 時間割ジャンプをグリッド上のメニューキーから開いたか (閉じた後のフォーカス戻し先を切り替える)
+    var jumpMenuOpenedFromGrid by remember { mutableStateOf(false) }
+
+    // 日をまたぐジャンプ要求 (▶▶/◀◀、上下キー)。読み込み済み範囲内ならそのまま、
+    // 範囲より過去なら 7 日分を追加取得してからジャンプ、範囲より未来なら何もしない
+    val requestTime: (OffsetDateTime) -> Unit = { target ->
+        if (EpgDayJump.isWithinRange(target, epgViewModel.epgRangeStart, epgViewModel.epgRangeEnd)) {
+            onUpdateTargetTime(target)
+        } else if (target.isBefore(epgViewModel.epgRangeStart)) {
+            epgViewModel.extendPast { result ->
+                when (result) {
+                    EpgViewModel.ExtendPastResult.Extended -> {
+                        if (EpgDayJump.isWithinRange(target, epgViewModel.epgRangeStart, epgViewModel.epgRangeEnd)) {
+                            onUpdateTargetTime(target)
+                        }
+                    }
+
+                    EpgViewModel.ExtendPastResult.NoMoreData ->
+                        onShowToast("これ以上過去の番組表はありません")
+
+                    EpgViewModel.ExtendPastResult.Failed ->
+                        onShowToast("過去の番組表を取得できませんでした")
+                }
+            }
+        }
     }
 
     androidx.compose.runtime.LaunchedEffect(selectedProgram) {
@@ -238,7 +273,16 @@ fun EpgNavigationContainer(
                     currentType = currentType,
                     onTypeChanged = onTypeChanged,
                     availableTypes = availableTypes,
-                    onEpgJumpMenuStateChanged = onJumpMenuStateChanged,
+                    onEpgJumpMenuStateChanged = { open ->
+                        if (open) jumpMenuOpenedFromGrid = false
+                        onJumpMenuStateChanged(open)
+                    },
+                    onRequestTime = requestTime,
+                    recordedRanges = recordedRanges,
+                    onOpenJumpMenuFromGrid = {
+                        jumpMenuOpenedFromGrid = true
+                        onJumpMenuStateChanged(true)
+                    },
                     onSearchClick = { isSearchBarVisible = true },
                     restoreChannelId = restoreChannelId,
                     reserves = reserves,
@@ -505,17 +549,42 @@ fun EpgNavigationContainer(
             }
         }
 
+        // 過去方向の追加読み込み中は番組表を消さず、控えめなインジケータだけ出す
+        if (epgViewModel.isLoadingMorePast) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 24.dp)
+                    .zIndex(5f)
+                    .background(colors.surface.copy(alpha = 0.9f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        color = colors.textPrimary,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text("過去の番組表を読み込み中…", fontSize = 13.sp, color = colors.textPrimary)
+                }
+            }
+        }
+
         AnimatedVisibility(
             visible = isJumpMenuOpen, enter = fadeIn(), exit = fadeOut(),
             modifier = Modifier.zIndex(10f)
         ) {
-            val now = remember { OffsetDateTime.now() }
             // ★ 修正: ジャンプメニューを開く際、現在フォーカスしている時間を初期値として渡す
             val initialTime =
                 remember(isJumpMenuOpen) { epgViewModel.lastFocusedTime ?: OffsetDateTime.now() }
+            // 日付一覧は読み込み済み範囲 (初回 7 日前〜7 日後、◀◀ で過去へ伸びる) に合わせる
+            val rangeStart = epgViewModel.epgRangeStart
+            val rangeEnd = epgViewModel.epgRangeEnd
+            val dates = remember(rangeStart, rangeEnd) { EpgTimeSlots.dates(rangeStart, rangeEnd) }
 
             EpgJumpMenu(
-                dates = remember(now) { List(7) { now.plusDays(it.toLong()) } },
+                dates = dates,
                 initialTime = initialTime, // ★ 修正: これにより開いた瞬間から見ている時間帯に合う
                 timeFormat = timeFormat,
                 onSelect = { selectedTime ->
@@ -532,7 +601,16 @@ fun EpgNavigationContainer(
                 },
                 onDismiss = {
                     onJumpMenuStateChanged(false)
-                    jumpButtonRequester.safeRequestFocus("EpgNav_JumpDismiss")
+                    // グリッドのメニューキーから開いた場合、ヘッダーは隠れているのでグリッドへ戻す
+                    if (jumpMenuOpenedFromGrid) {
+                        jumpMenuOpenedFromGrid = false
+                        scope.launch {
+                            delay(100)
+                            gridFocusRequester.safeRequestFocus("EpgNav_JumpDismissGrid")
+                        }
+                    } else {
+                        jumpButtonRequester.safeRequestFocus("EpgNav_JumpDismiss")
+                    }
                 }
             )
         }

@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import androidx.media3.common.util.UnstableApi
 import androidx.tv.material3.*
 import com.beeregg2001.komorebi.data.model.EpgProgram
+import com.beeregg2001.komorebi.data.model.RecordedProgram
 import com.beeregg2001.komorebi.ui.theme.NotoSansJP
 import com.beeregg2001.komorebi.common.safeRequestFocus
 import com.beeregg2001.komorebi.ui.theme.KomorebiTheme
@@ -54,6 +55,9 @@ fun ProgramDetailScreen(
     mode: ProgramDetailMode = ProgramDetailMode.EPG,
     isReserved: Boolean = false,
     isReadOnly: Boolean = false,
+    // 番組表の番組に対応する録画済み番組 (見つかった場合のみ「録画を再生」ボタンを出す)
+    recordedProgram: RecordedProgram? = null,
+    onPlayRecordedClick: (RecordedProgram) -> Unit = {},
     onPlayClick: (EpgProgram) -> Unit = {},
     onRecordClick: (EpgProgram) -> Unit = {},
     onRecordDetailClick: (EpgProgram) -> Unit = {},
@@ -105,6 +109,10 @@ fun ProgramDetailScreen(
     val isBroadcasting = now.isAfter(startTime) && now.isBefore(endTime)
     val isFuture = startTime.isAfter(now)
 
+    // 録画済みなら「録画を再生」が先頭ボタン兼初期フォーカスになる
+    val hasRecording = !isReadOnly && mode == ProgramDetailMode.EPG && recordedProgram != null
+    val firstButtonRequester = if (hasRecording) Modifier else Modifier.focusRequester(initialFocusRequester)
+
     val recordRed = Color(0xFFC62828)
     val recordDarkRed = Color(0xFF421C1C)
     val seriesReserveOrange = Color(0xFFE65100)
@@ -124,6 +132,14 @@ fun ProgramDetailScreen(
         isReady = true
         delay(400)
         isClickEnabled = true
+    }
+
+    // 録画の照合は画面表示後に非同期で終わるため、ボタンが増えた時点で初期フォーカスを当て直す
+    LaunchedEffect(hasRecording) {
+        if (hasRecording && isReady) {
+            delay(50)
+            initialFocusRequester.safeRequestFocus("ProgramDetail_Recorded")
+        }
     }
 
     BackHandler(enabled = isClickEnabled) {
@@ -200,12 +216,31 @@ fun ProgramDetailScreen(
                             )
                         }
                     } else {
+                        if (hasRecording) {
+                            Button(
+                                onClick = { if (isClickEnabled) onPlayRecordedClick(recordedProgram!!) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(initialFocusRequester),
+                                colors = ButtonDefaults.colors(
+                                    containerColor = colors.accent,
+                                    contentColor = Color.White
+                                )
+                            ) {
+                                Text(
+                                    "録画を再生",
+                                    fontFamily = NotoSansJP,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
                         if (isBroadcasting) {
                             Button(
                                 onClick = { if (isClickEnabled) onPlayClick(safeProgram) },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .focusRequester(initialFocusRequester),
+                                    .then(firstButtonRequester),
                                 colors = ButtonDefaults.colors(
                                     containerColor = colors.textPrimary,
                                     contentColor = if (colors.isDark) Color.Black else Color.White
@@ -298,7 +333,7 @@ fun ProgramDetailScreen(
                                     ),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .focusRequester(initialFocusRequester)
+                                        .then(firstButtonRequester)
                                 ) {
                                     Text(
                                         "予約設定変更",
@@ -325,7 +360,7 @@ fun ProgramDetailScreen(
                                     onClick = { if (isClickEnabled) onRecordClick(safeProgram) },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .focusRequester(initialFocusRequester),
+                                        .then(firstButtonRequester),
                                     colors = ButtonDefaults.colors(
                                         containerColor = recordRed,
                                         contentColor = Color.White
@@ -362,7 +397,7 @@ fun ProgramDetailScreen(
                                     modifier = Modifier.fillMaxWidth()
                                 ) { Text("録画予約（詳細設定）", fontFamily = NotoSansJP) }
                             }
-                        } else {
+                        } else if (!hasRecording) {
                             Button(
                                 onClick = {},
                                 enabled = false,
@@ -389,7 +424,7 @@ fun ProgramDetailScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(
-                            if (isReadOnly || (isPast && mode == ProgramDetailMode.EPG)) Modifier.focusRequester(
+                            if (isReadOnly || (isPast && mode == ProgramDetailMode.EPG && !hasRecording)) Modifier.focusRequester(
                                 initialFocusRequester
                             ) else Modifier
                         ),

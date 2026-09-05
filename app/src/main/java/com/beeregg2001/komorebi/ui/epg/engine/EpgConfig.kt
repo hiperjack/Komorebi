@@ -44,6 +44,9 @@ class EpgConfig(density: Density, colors: KomorebiColors) {
     val colorReserveBorderPartial = Color(0xFFFFCA28)
     val colorReserveBgDuplicated = if (colors.isDark) Color(0xFF4A1818) else Color(0xFFFFEBEE)
 
+    // 録画済み番組の枠線 (予約と同じ色・太さの実線。予約は点線なので線種で区別)
+    val colorRecordedBorder = colorReserveBorder
+
     val colorTextPrimary = colors.textPrimary
     val colorTextSecondary = colors.textSecondary
     val colorTextPast = colors.textSecondary.copy(alpha = 0.5f)

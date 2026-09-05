@@ -39,6 +39,7 @@ import coil.compose.rememberAsyncImagePainter
 import com.beeregg2001.komorebi.data.model.EpgProgram
 import com.beeregg2001.komorebi.data.model.ReserveItem
 import com.beeregg2001.komorebi.ui.epg.engine.*
+import com.beeregg2001.komorebi.ui.epg.logic.RecordedProgramMatcher
 import com.beeregg2001.komorebi.viewmodel.EpgUiState
 import com.beeregg2001.komorebi.common.safeRequestFocus
 import com.beeregg2001.komorebi.ui.theme.KomorebiTheme
@@ -67,7 +68,14 @@ fun ModernEpgCanvasEngine_Smooth(
     onRequestJumpToNow: () -> Unit,
     searchButtonFocusRequester: FocusRequester,
     onSearchClick: () -> Unit,
-    timeFormat: String
+    timeFormat: String,
+    // 日をまたぐジャンプ要求 (▶▶/◀◀ の ±1 日、上下キーでの前日末尾/翌日先頭)。
+    // 読み込み済み範囲の判定と過去方向の追加読み込みは呼び出し側 (EpgNavigationContainer) が行う
+    onRequestTime: (target: OffsetDateTime) -> Unit = {},
+    // メニュー (バーガー) キー: グリッドから時間割ジャンプを開く
+    onOpenJumpMenuFromGrid: () -> Unit = {},
+    // 録画済み番組の枠線描画用 (ローカルDBの録画のチャンネル・放送時間)
+    recordedRanges: List<RecordedProgramMatcher.RecordedRange> = emptyList()
 ) {
     val density = LocalDensity.current
     val colors = KomorebiTheme.colors
@@ -80,6 +88,11 @@ fun ModernEpgCanvasEngine_Smooth(
     val logoPainters = logoUrls.map { rememberAsyncImagePainter(model = it) }
     val clockPainter = rememberVectorPainter(Icons.Default.Schedule)
     val reserveMap = remember(reserves) { reserves.associateBy { it.program.id } }
+    // 表示中の1日分の番組のうち、録画済みのものの ID (録画一覧や表示日が変わったときだけ再計算)
+    val recordedIds = remember(uiState, recordedRanges) {
+        val data = (uiState as? EpgUiState.Success)?.data ?: return@remember emptySet<String>()
+        RecordedProgramMatcher.matchedProgramIds(data.flatMap { it.programs }, recordedRanges)
+    }
 
     val visibleTabs = remember(availableTypes) {
         val all =
@@ -267,6 +280,29 @@ fun ModernEpgCanvasEngine_Smooth(
                             }
                         }
 
+                        // 非公式パッチ: ▶▶/◀◀ で翌日/前日へ、メニューキーで時間割ジャンプを開く
+                        when (event.nativeKeyEvent.keyCode) {
+                            NativeKeyEvent.KEYCODE_MEDIA_FAST_FORWARD, NativeKeyEvent.KEYCODE_MEDIA_NEXT,
+                            NativeKeyEvent.KEYCODE_MEDIA_REWIND, NativeKeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                                if (event.type == KeyEventType.KeyDown &&
+                                    event.nativeKeyEvent.repeatCount == 0 && epgState.hasData
+                                ) {
+                                    val isForward =
+                                        event.nativeKeyEvent.keyCode == NativeKeyEvent.KEYCODE_MEDIA_FAST_FORWARD ||
+                                                event.nativeKeyEvent.keyCode == NativeKeyEvent.KEYCODE_MEDIA_NEXT
+                                    val currentTime =
+                                        epgState.baseTime.plusMinutes(epgState.focusedMin.toLong())
+                                    onRequestTime(currentTime.plusDays(if (isForward) 1L else -1L))
+                                }
+                                return@onKeyEvent true
+                            }
+
+                            NativeKeyEvent.KEYCODE_MENU -> {
+                                if (event.type == KeyEventType.KeyUp) onOpenJumpMenuFromGrid()
+                                return@onKeyEvent true
+                            }
+                        }
+
                         if (event.type == KeyEventType.KeyDown) {
                             when (event.key) {
                                 Key.DirectionRight -> {
@@ -302,7 +338,7 @@ fun ModernEpgCanvasEngine_Smooth(
                                             epgState.baseTime.plusDays(1).plusHours(1)
                                         if (lastRequestedTargetTime != nextDayStart) {
                                             lastRequestedTargetTime = nextDayStart
-                                            onUpdateTargetTime(nextDayStart)
+                                            onRequestTime(nextDayStart)
                                         }
                                         true
                                     } else {
@@ -338,7 +374,7 @@ fun ModernEpgCanvasEngine_Smooth(
                                             val prevDayEnd = epgState.baseTime.minusHours(1)
                                             if (lastRequestedTargetTime != prevDayEnd) {
                                                 lastRequestedTargetTime = prevDayEnd
-                                                onUpdateTargetTime(prevDayEnd)
+                                                onRequestTime(prevDayEnd)
                                             }
                                         }
                                         true
@@ -377,7 +413,8 @@ fun ModernEpgCanvasEngine_Smooth(
                                         isGridFocused = isContentFocused || epgState.hasData,
                                         reserveMap = reserveMap,
                                         clockPainter = clockPainter,
-                                        timeFormat = timeFormat
+                                        timeFormat = timeFormat,
+                                        recordedIds = recordedIds
                                     )
                                     hasRenderedFirstFrame = true
                                 }

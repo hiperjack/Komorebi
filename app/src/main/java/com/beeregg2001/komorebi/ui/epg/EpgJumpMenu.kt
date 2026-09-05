@@ -1,7 +1,6 @@
 package com.beeregg2001.komorebi.ui.epg
 
 import android.os.Build
-import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -9,6 +8,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,89 +27,59 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.*
 import com.beeregg2001.komorebi.common.safeRequestFocus
+import com.beeregg2001.komorebi.ui.epg.logic.EpgTimeSlots
 import com.beeregg2001.komorebi.ui.theme.KomorebiTheme
 import kotlinx.coroutines.delay
+import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 import java.util.Locale
 
-@Immutable
-data class EpgSlotState(
-    val time: OffsetDateTime,
-    val isSelectable: Boolean,
-    val baseColor: Color,
-    val globalIndex: Int
-)
-
+/**
+ * 日時指定ジャンプ (時間割)。
+ * 縦に日付 (読み込み済み範囲: 初回は 7 日前〜7 日後、◀◀ で過去へ伸びる)、横に 6 時間区切りの 4 枠。
+ * 決定でその枠の開始時刻へジャンプする。
+ */
 @RequiresApi(Build.VERSION_CODES.O)
 @OptIn(ExperimentalTvMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
 fun EpgJumpMenu(
-    dates: List<OffsetDateTime>,
-    initialTime: OffsetDateTime, // ★ 追加: 初期フォーカス用の時間（現在見ている時間）
-    timeFormat: String,          // ★ 追加: 12H/24H フォーマット
+    dates: List<LocalDate>,
+    initialTime: OffsetDateTime,
+    timeFormat: String,
     onSelect: (OffsetDateTime) -> Unit,
     onDismiss: () -> Unit
 ) {
     val colors = KomorebiTheme.colors
-    val now = remember { OffsetDateTime.now().truncatedTo(ChronoUnit.HOURS) }
-    val fullTimeSlots = remember { (0..23).toList() }
+    val now = remember { OffsetDateTime.now() }
+    val today = now.toLocalDate()
+    val offset = initialTime.offset
+    val slots = 0 until EpgTimeSlots.SLOTS_PER_DAY
 
-    val gridData = remember(dates, now, colors) {
-        dates.mapIndexed { dIdx, date ->
-            fullTimeSlots.map { hour ->
-                val slotTime = date.withHour(hour).truncatedTo(ChronoUnit.HOURS)
-                EpgSlotState(
-                    time = slotTime,
-                    isSelectable = !slotTime.isBefore(now),
-                    baseColor = getTimeSlotColor(hour, colors),
-                    globalIndex = (dIdx * 24) + hour
-                )
-            }
-        }
+    val dateColumnWidth = 120.dp
+    val slotColumnWidth = 130.dp
+    val rowHeight = 32.dp
+
+    val focusRequesters = remember(dates) {
+        dates.map { List(EpgTimeSlots.SLOTS_PER_DAY) { FocusRequester() } }
     }
+    val listState = rememberLazyListState()
 
-    var globalFocusedIndex by remember { mutableIntStateOf(-1) }
-    val slotHeight = 13.dp
-    val columnWidth = 85.dp
-
-    val focusRequesters = remember(dates.size) {
-        List(dates.size) { List(24) { FocusRequester() } }
-    }
-
-    // ★ 修正: ただ最初の枠を探すのではなく、initialTime に最も近い枠を探してフォーカスする
-    LaunchedEffect(initialTime) {
+    // 初期フォーカス: 今見ている日時が属する枠 (範囲外なら今日、それも無ければ先頭)
+    LaunchedEffect(initialTime, dates) {
+        if (dates.isEmpty()) return@LaunchedEffect
+        val targetDate = initialTime.toLocalDate()
+        val row = dates.indexOf(targetDate).takeIf { it >= 0 }
+            ?: dates.indexOf(today).takeIf { it >= 0 }
+            ?: 0
+        val slot = EpgTimeSlots.slotIndexOf(initialTime)
+        listState.scrollToItem((row - 4).coerceAtLeast(0))
         delay(100)
-        var targetDIdx = 0
-        var targetTIdx = 0
-        var minDiff = Long.MAX_VALUE
-
-        for (dIdx in gridData.indices) {
-            for (tIdx in 0..23) {
-                val slot = gridData[dIdx][tIdx]
-                if (slot.isSelectable) {
-                    // initialTime との分単位での差分を計算
-                    val diff = Math.abs(ChronoUnit.MINUTES.between(slot.time, initialTime))
-                    if (diff < minDiff) {
-                        minDiff = diff
-                        targetDIdx = dIdx
-                        targetTIdx = tIdx
-                    }
-                }
-            }
-        }
-
-        if (dates.isNotEmpty() && gridData.isNotEmpty() && gridData[targetDIdx][targetTIdx].isSelectable) {
-            focusRequesters[targetDIdx][targetTIdx].safeRequestFocus("EpgJumpMenu_Initial")
-        } else if (dates.isNotEmpty()) {
-            focusRequesters[0][0].safeRequestFocus("EpgJumpMenuFallback")
-        }
+        focusRequesters[row][slot].safeRequestFocus("EpgJumpMenu_Initial")
     }
 
     Box(
@@ -116,12 +88,9 @@ fun EpgJumpMenu(
             .background(Color.Black.copy(alpha = 0.9f))
             .onKeyEvent { event ->
                 if (event.key == Key.Back || event.key == Key.Escape) {
-                    if (event.type == KeyEventType.KeyDown) {
-                        return@onKeyEvent true
-                    }
+                    if (event.type == KeyEventType.KeyDown) return@onKeyEvent true
                     if (event.type == KeyEventType.KeyUp) {
-                        onDismiss()
-                        return@onKeyEvent true
+                        onDismiss(); return@onKeyEvent true
                     }
                 }
                 false
@@ -129,9 +98,11 @@ fun EpgJumpMenu(
             .focusGroup(),
         contentAlignment = Alignment.Center
     ) {
+        // LazyColumn (SubcomposeLayout) を含むため IntrinsicSize は使えない (クラッシュする)。幅は明示する
+        val gridWidth = dateColumnWidth + slotColumnWidth * EpgTimeSlots.SLOTS_PER_DAY
         Surface(
             modifier = Modifier
-                .width(IntrinsicSize.Min)
+                .width(gridWidth + 48.dp)
                 .wrapContentHeight()
                 .focusGroup(),
             shape = RoundedCornerShape(8.dp),
@@ -151,78 +122,91 @@ fun EpgJumpMenu(
                     color = colors.textPrimary, modifier = Modifier.padding(bottom = 8.dp)
                 )
 
+                // ヘッダー行 (時間帯ラベル)
                 Row {
-                    Column(horizontalAlignment = Alignment.End) {
-                        Box(modifier = Modifier
-                            .width(60.dp)
-                            .height(35.dp))
-                        // ★ 修正: timeFormat を渡す
-                        fullTimeSlots.forEach { hour ->
-                            TimeLabelCell(
-                                hour,
-                                slotHeight,
-                                timeFormat
+                    Box(modifier = Modifier.width(dateColumnWidth).height(28.dp))
+                    slots.forEach { slotIdx ->
+                        Box(
+                            modifier = Modifier.width(slotColumnWidth).height(28.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = slotHeaderLabel(slotIdx, timeFormat),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.textSecondary
                             )
                         }
                     }
+                }
 
-                    gridData.forEachIndexed { dIdx, daySlots ->
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            HeaderCell(dates[dIdx], columnWidth)
-                            daySlots.forEachIndexed { tIdx, slot ->
-                                val isHighlighted =
-                                    globalFocusedIndex != -1 && slot.globalIndex >= globalFocusedIndex && slot.globalIndex < globalFocusedIndex + 3
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .width(gridWidth)
+                        .heightIn(max = 400.dp)
+                        .focusGroup()
+                ) {
+                    itemsIndexed(dates, key = { _, d -> d.toEpochDay() }) { rowIdx, date ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            DateLabelCell(date, isToday = date == today, dateColumnWidth, rowHeight)
+
+                            slots.forEach { slotIdx ->
+                                val slotStart = EpgTimeSlots.slotStart(date, slotIdx, offset)
+                                val slotEnd = slotStart.plusHours(EpgTimeSlots.SLOT_HOURS.toLong())
+                                val isPastSlot = !slotEnd.isAfter(now)
+                                val isCurrentSlot = !slotStart.isAfter(now) && slotEnd.isAfter(now)
                                 var isFocused by remember { mutableStateOf(false) }
+
+                                val baseColor = getTimeSlotColor(slotIdx * EpgTimeSlots.SLOT_HOURS + 3, colors)
 
                                 Box(
                                     modifier = Modifier
-                                        .width(columnWidth)
-                                        .height(slotHeight)
-                                        .focusRequester(focusRequesters[dIdx][tIdx])
+                                        .width(slotColumnWidth)
+                                        .height(rowHeight)
+                                        .padding(1.dp)
+                                        .focusRequester(focusRequesters[rowIdx][slotIdx])
                                         .focusProperties {
-                                            if (tIdx == 23 && dIdx < dates.size - 1) {
-                                                down = focusRequesters[dIdx + 1][0]
-                                            } else if (tIdx == 23) {
-                                                down = FocusRequester.Cancel
-                                            }
-
-                                            if (tIdx == 0 && dIdx > 0) {
-                                                up = focusRequesters[dIdx - 1][23]
-                                            } else if (tIdx == 0) {
-                                                up = FocusRequester.Cancel
-                                            }
-
-                                            if (dIdx == 0) {
-                                                left = FocusRequester.Cancel
-                                            }
-                                            if (dIdx == dates.size - 1) {
-                                                right = FocusRequester.Cancel
-                                            }
+                                            if (slotIdx == 0) left = FocusRequester.Cancel
+                                            if (slotIdx == slots.last) right = FocusRequester.Cancel
+                                            if (rowIdx == 0) up = FocusRequester.Cancel
+                                            if (rowIdx == dates.lastIndex) down = FocusRequester.Cancel
                                         }
-                                        .onFocusChanged {
-                                            isFocused = it.isFocused
-                                            if (it.isFocused) {
-                                                globalFocusedIndex = slot.globalIndex
-                                            }
-                                        }
-                                        .focusable(enabled = slot.isSelectable)
+                                        .onFocusChanged { isFocused = it.isFocused }
+                                        .focusable()
                                         .onKeyEvent { event ->
-                                            if (event.type == KeyEventType.KeyDown && (event.key == Key.DirectionCenter || event.key == Key.Enter)) {
-                                                onSelect(slot.time); true
+                                            if (event.type == KeyEventType.KeyDown &&
+                                                (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter)
+                                            ) {
+                                                onSelect(slotStart); true
                                             } else false
                                         }
                                         .background(
-                                            if (isHighlighted || isFocused) colors.accent else if (!slot.isSelectable) slot.baseColor.copy(
-                                                alpha = 0.1f
-                                            ) else slot.baseColor
+                                            when {
+                                                isFocused -> colors.accent
+                                                isPastSlot -> baseColor.copy(alpha = 0.35f)
+                                                else -> baseColor
+                                            }
                                         )
                                         .border(
-                                            width = if (isFocused) 2.dp else 0.5.dp,
-                                            color = if (isFocused) colors.textPrimary else if (!slot.isSelectable) Color.Transparent else colors.background.copy(
-                                                0.3f
-                                            )
+                                            width = if (isFocused || isCurrentSlot) 2.dp else 0.5.dp,
+                                            color = when {
+                                                isFocused -> colors.textPrimary
+                                                isCurrentSlot -> colors.accent
+                                                else -> colors.background.copy(0.3f)
+                                            }
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isCurrentSlot) {
+                                        Text(
+                                            "現在",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isFocused) Color.White else colors.accent
                                         )
-                                )
+                                    }
+                                }
                             }
                         }
                     }
@@ -232,67 +216,62 @@ fun EpgJumpMenu(
     }
 }
 
-// ★ 修正: timeFormat に応じてラベルの表示を切り替える
-@Composable
-private fun TimeLabelCell(hour: Int, height: Dp, timeFormat: String) {
-    val colors = KomorebiTheme.colors
-    Box(
-        modifier = Modifier
-            .height(height)
-            .width(60.dp)
-            .padding(end = 8.dp),
-        contentAlignment = Alignment.CenterEnd
-    ) {
-        val label = if (timeFormat == "12H") {
-            when {
-                hour == 0 -> "AM 0"
-                hour == 12 -> "PM 0"
-                hour % 3 == 0 -> "${hour % 12}"
-                else -> ""
-            }
-        } else {
-            when {
-                hour % 3 == 0 -> "$hour:00"
-                else -> ""
-            }
+private fun slotHeaderLabel(slotIdx: Int, timeFormat: String): String {
+    val startHour = slotIdx * EpgTimeSlots.SLOT_HOURS
+    val endHour = startHour + EpgTimeSlots.SLOT_HOURS
+    return if (timeFormat == "12H") {
+        when (slotIdx) {
+            0 -> "AM 0-6"
+            1 -> "AM 6-12"
+            2 -> "PM 0-6"
+            else -> "PM 6-12"
         }
-
-        if (label.isNotEmpty()) {
-            Text(
-                label,
-                fontSize = 10.sp,
-                color = colors.textSecondary,
-                fontWeight = FontWeight.Bold
-            )
-        }
+    } else {
+        "${startHour}-${endHour}時"
     }
 }
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
-fun HeaderCell(date: OffsetDateTime, width: Dp) {
+private fun DateLabelCell(
+    date: LocalDate,
+    isToday: Boolean,
+    width: androidx.compose.ui.unit.Dp,
+    height: androidx.compose.ui.unit.Dp
+) {
     val colors = KomorebiTheme.colors
     val isSunday = date.dayOfWeek.value == 7
     val isSaturday = date.dayOfWeek.value == 6
-    Column(
+    Row(
         modifier = Modifier
             .width(width)
-            .height(35.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .height(height)
+            .padding(end = 8.dp),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        if (isToday) {
+            Text(
+                "今日",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = colors.accent,
+                modifier = Modifier.padding(end = 6.dp)
+            )
+        }
         Text(
             text = date.format(DateTimeFormatter.ofPattern("M/d", Locale.JAPANESE)),
             fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
+            fontWeight = if (isToday) FontWeight.Black else FontWeight.Bold,
             color = colors.textPrimary
         )
         Text(
             text = date.format(DateTimeFormatter.ofPattern("(E)", Locale.JAPANESE)),
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             color = when {
                 isSunday -> Color(0xFFFF5252); isSaturday -> Color(0xFF448AFF); else -> colors.textSecondary
-            }
+            },
+            modifier = Modifier.padding(start = 2.dp)
         )
     }
 }

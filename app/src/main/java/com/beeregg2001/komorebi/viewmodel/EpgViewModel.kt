@@ -90,6 +90,79 @@ class EpgViewModel @Inject constructor(
     private var currentTargetTime: OffsetDateTime = OffsetDateTime.now()
 
     // ==========================================
+    // 番組表の読み込み範囲 (過去方向は ◀◀ で 7 日ずつ追加読み込みできる)
+    // ==========================================
+    companion object {
+        const val INITIAL_PAST_DAYS = 7L
+        const val FUTURE_DAYS = 7L
+        const val EXTEND_PAST_STEP_DAYS = 7L
+    }
+
+    enum class ExtendPastResult { Extended, NoMoreData, Failed }
+
+    // 放送波ごとの読み込み済み開始日時 (追加読み込みで過去へ伸びる)
+    private val loadedStartByType = mutableMapOf<String, OffsetDateTime>()
+
+    private fun initialRangeStart(now: OffsetDateTime): OffsetDateTime =
+        now.minusDays(INITIAL_PAST_DAYS).withHour(0).withMinute(0).withSecond(0).withNano(0)
+
+    private fun rangeEnd(now: OffsetDateTime): OffsetDateTime = now.plusDays(FUTURE_DAYS)
+
+    private fun loadedStart(type: String): OffsetDateTime =
+        loadedStartByType.getOrPut(type) { initialRangeStart(OffsetDateTime.now()) }
+
+    // UI (日ジャンプの範囲判定・時間割メニューの日付一覧) に渡す、現在の放送波の読み込み済み範囲
+    var epgRangeStart by mutableStateOf(initialRangeStart(OffsetDateTime.now()))
+        private set
+    var epgRangeEnd by mutableStateOf(rangeEnd(OffsetDateTime.now()))
+        private set
+
+    // 過去方向の追加読み込み中フラグ (番組表は消さず、小さなインジケータだけ出す)
+    var isLoadingMorePast by mutableStateOf(false)
+        private set
+
+    private fun publishRange(type: String) {
+        epgRangeStart = loadedStart(type)
+        epgRangeEnd = rangeEnd(OffsetDateTime.now())
+    }
+
+    /**
+     * 現在の放送波について、読み込み済み範囲の手前 7 日分を KonomiTV から追加取得してメモリ上のデータに結合する。
+     * KonomiTV 側のアーカイブ最古日に達している場合は NoMoreData を返す。
+     */
+    fun extendPast(onResult: (ExtendPastResult) -> Unit) {
+        if (isLoadingMorePast) return
+        val type = _selectedBroadcastingType.value
+        val currentStart = loadedStart(type)
+
+        val earliest = repository.getEarliestAvailable(type)
+        if (earliest != null && !currentStart.isAfter(earliest)) {
+            onResult(ExtendPastResult.NoMoreData)
+            return
+        }
+
+        isLoadingMorePast = true
+        viewModelScope.launch {
+            val newStart = currentStart.minusDays(EXTEND_PAST_STEP_DAYS)
+            val result = repository.fetchAndMergeRange(newStart, currentStart, type)
+            result.onSuccess { merged ->
+                // 応答で判明した最古日より前へは伸ばさない
+                val floor = repository.getEarliestAvailable(type)
+                loadedStartByType[type] =
+                    if (floor != null && floor.isAfter(newStart)) floor.withHour(0).withMinute(0).withSecond(0).withNano(0) else newStart
+                fullEpgData = merged
+                publishRange(type)
+                // 表示中の日は変わらないので再スライスはしない (ジャンプは呼び出し側が updateTargetTime で行う)
+                isLoadingMorePast = false
+                onResult(ExtendPastResult.Extended)
+            }.onFailure {
+                isLoadingMorePast = false
+                onResult(ExtendPastResult.Failed)
+            }
+        }
+    }
+
+    // ==========================================
     // 未来番組検索用のState
     // ==========================================
     private val _searchHistory = MutableStateFlow<List<String>>(emptyList())
@@ -271,8 +344,8 @@ class EpgViewModel @Inject constructor(
      */
     fun preloadEpgDataForSearch(availableTypes: List<String>) {
         val now = OffsetDateTime.now()
-        val start = now.withHour(0).withMinute(0).withSecond(0).withNano(0)
-        val end = now.plusDays(7) // 1週間分を取得
+        val start = initialRangeStart(now)
+        val end = rangeEnd(now) // 7日前〜7日後を取得
 
         viewModelScope.launch(Dispatchers.IO) {
             availableTypes.map { type ->
@@ -328,14 +401,18 @@ class EpgViewModel @Inject constructor(
             }
 
             val now = OffsetDateTime.now()
-            val start = now.withHour(0).withMinute(0).withSecond(0).withNano(0)
-            val end = now.plusDays(7)
-
             val typeToFetch = channelType ?: _selectedBroadcastingType.value
+            // 初回は 7 日前 0 時から。追加読み込み済みならその開始日時から (過去分をキャッシュから引き継ぐ)
+            val start = initialRangeStart(now)
+            val end = rangeEnd(now)
 
             repository.getEpgDataStream(start, end, typeToFetch).collect { result ->
                 result.onSuccess { data ->
                     fullEpgData = data
+                    // 追加読み込みで過去へ伸ばした開始日時があればそれを維持し、無ければ今回の取得開始日時にする
+                    val cur = loadedStartByType[typeToFetch]
+                    if (cur == null || cur.isAfter(start)) loadedStartByType[typeToFetch] = start
+                    publishRange(typeToFetch)
                     fullLogoUrls =
                         withContext(Dispatchers.Default) { data.map { getLogoUrl(it.channel) } }
 
