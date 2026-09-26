@@ -111,6 +111,11 @@ fun SmbVlcPlayerScreen(
     }
 
     val autoCmSkipStr by settingsViewModel.autoCmSkip.collectAsState()
+    // 非公式パッチ: モダンUIでは再生開始時にシークバー/ボタンを出さない (決定/上下キーで表示できる)
+    LaunchedEffect(smbItem.path, isModern) {
+        if (isModern) onShowControlsChange(false)
+    }
+
     LaunchedEffect(autoCmSkipStr) {
         vs.isAutoCmSkipEnabled = (autoCmSkipStr == "ON")
     }
