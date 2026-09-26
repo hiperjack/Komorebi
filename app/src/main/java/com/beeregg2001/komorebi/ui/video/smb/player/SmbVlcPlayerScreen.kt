@@ -726,7 +726,9 @@ fun SmbVlcPlayerScreen(
                     onInfoToggle = { isProgramInfoOpen = true; onShowControlsChange(true) },
                     onSettingsToggle = {
                         if (isModern) isModernSettingsOpen = true else onSubMenuToggle(true)
-                    }
+                    },
+                    // 非公式パッチ: 総時間の左に現在の再生速度を常時表示
+                    playbackSpeed = vs.currentSpeed
                 )
 
                 AnimatedVisibility(
