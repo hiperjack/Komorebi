@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,6 +47,7 @@ import com.beeregg2001.komorebi.ui.video.smb.SmbItem
 import com.beeregg2001.komorebi.viewmodel.SettingsViewModel
 import com.beeregg2001.komorebi.viewmodel.VideoPlayerViewModel
 import com.beeregg2001.komorebi.viewmodel.SmbViewModel
+import com.beeregg2001.komorebi.ui.video.player.PLAYBACK_SPEEDS
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -251,6 +253,38 @@ fun SmbVlcPlayerScreen(
 
         val mediaPlayer = vlcComponents.second
 
+        // 非公式パッチ: 再生速度を録画プレイヤーと共有の設定 (VIDEO_PLAYBACK_SPEED) から復元し、変更時に保存する
+        val videoPlaybackSpeedStr by settingsViewModel.videoPlaybackSpeed.collectAsState()
+        val setPlaybackSpeed: (Float) -> Unit = { speed ->
+            vs.currentSpeed = speed
+            mediaPlayer.rate = speed
+            settingsViewModel.updateVideoPlaybackSpeed(speed.toString())
+        }
+        LaunchedEffect(videoPlaybackSpeedStr) {
+            val saved = videoPlaybackSpeedStr.toFloatOrNull() ?: 1.0f
+            vs.currentSpeed = if (saved in PLAYBACK_SPEEDS) saved else 1.0f
+            mediaPlayer.rate = vs.currentSpeed
+        }
+
+        // 非公式パッチ: 字幕の ON/OFF は前回の状態 (SMB_SUBTITLE_ENABLED) を復元する。
+        // 字幕トラックは再生開始後しばらくして列挙されるため、再生が始まってから最大 10 秒待って適用する
+        val smbSubtitleEnabledStr by settingsViewModel.smbSubtitleEnabled.collectAsState()
+        var isSavedSubtitleApplied by remember(smbItem.path) { mutableStateOf(false) }
+        LaunchedEffect(vs.isPlayerPlaying, smbItem.path) {
+            if (!vs.isPlayerPlaying || isSavedSubtitleApplied) return@LaunchedEffect
+            repeat(20) {
+                val tracks = try { mediaPlayer.spuTracks?.filter { it.id != -1 } ?: emptyList() } catch (e: Exception) { emptyList() }
+                if (tracks.isNotEmpty()) {
+                    val enabled = smbSubtitleEnabledStr == "ON"
+                    vs.isSubtitleEnabled = enabled
+                    mediaPlayer.spuTrack = if (enabled) tracks.first().id else -1
+                    isSavedSubtitleApplied = true
+                    return@LaunchedEffect
+                }
+                delay(500)
+            }
+        }
+
         val fetchChaptersSafely: () -> Unit = {
             scope.launch(Dispatchers.IO) {
                 try {
@@ -289,6 +323,8 @@ fun SmbVlcPlayerScreen(
                 when (event.type) {
                     MediaPlayer.Event.Playing -> {
                         vs.isPlayerPlaying = true; isBuffering = false
+                        // 非公式パッチ: 保存済みの再生速度を確実に適用する
+                        if (mediaPlayer.rate != vs.currentSpeed) mediaPlayer.rate = vs.currentSpeed
 
                         if (!isMetadataLoaded) {
                             scope.launch(Dispatchers.IO) {
@@ -602,7 +638,20 @@ fun SmbVlcPlayerScreen(
                         onPause = { mediaPlayer.pause() },
                         onPlay = { mediaPlayer.play() },
                         onSkipPreviousChapter = skipToPreviousChapter,
-                        onSkipNextChapter = skipToNextChapter
+                        onSkipNextChapter = skipToNextChapter,
+                        // 非公式パッチ: CH+/CH- で再生速度を変更 (録画プレイヤーと同じ段階)
+                        onSpeedUp = {
+                            val idx = PLAYBACK_SPEEDS.indexOf(vs.currentSpeed).coerceAtLeast(0)
+                            val next = PLAYBACK_SPEEDS[(idx + 1).coerceAtMost(PLAYBACK_SPEEDS.lastIndex)]
+                            setPlaybackSpeed(next)
+                            vs.indicatorState = IndicatorState(Icons.Default.Speed, "${next}倍速")
+                        },
+                        onSpeedDown = {
+                            val idx = PLAYBACK_SPEEDS.indexOf(vs.currentSpeed).coerceAtLeast(0)
+                            val next = PLAYBACK_SPEEDS[(idx - 1).coerceAtLeast(0)]
+                            setPlaybackSpeed(next)
+                            vs.indicatorState = IndicatorState(Icons.Default.Speed, "${next}倍速")
+                        }
                     )
                 }
         ) {
@@ -732,11 +781,10 @@ fun SmbVlcPlayerScreen(
                             } else onShowToast("音声トラックが1つしかありません")
                         },
                         onSpeedToggle = {
-                            val speeds = listOf(1.0f, 1.5f, 2.0f, 0.8f)
-                            vs.currentSpeed =
-                                speeds[(speeds.indexOf(vs.currentSpeed) + 1) % speeds.size]
-                            mediaPlayer.rate =
-                                vs.currentSpeed; onShowToast("速度: ${vs.currentSpeed}x")
+                            // 非公式パッチ: 録画プレイヤーと同じ PLAYBACK_SPEEDS を循環し、設定に保存する
+                            val idx = PLAYBACK_SPEEDS.indexOf(vs.currentSpeed).coerceAtLeast(0)
+                            val next = PLAYBACK_SPEEDS[(idx + 1) % PLAYBACK_SPEEDS.size]
+                            setPlaybackSpeed(next); onShowToast("速度: ${next}x")
                         },
                         onSubtitleToggle = {
                             val tracks =
@@ -746,6 +794,7 @@ fun SmbVlcPlayerScreen(
                                 mediaPlayer.spuTrack =
                                     if (vs.isSubtitleEnabled) tracks.first().id else -1
                                 onShowToast("字幕: ${if (vs.isSubtitleEnabled) "表示" else "非表示"}")
+                                settingsViewModel.updateSmbSubtitleEnabled(vs.isSubtitleEnabled) // 非公式パッチ
                             } else onShowToast("字幕トラックがありません")
                         },
                         onQualitySelect = { isModernSettingsOpen = false },
@@ -796,11 +845,10 @@ fun SmbVlcPlayerScreen(
                             } else onShowToast("音声トラックが1つしかありません")
                         },
                         onSpeedToggle = {
-                            val speeds = listOf(1.0f, 1.5f, 2.0f, 0.8f)
-                            vs.currentSpeed =
-                                speeds[(speeds.indexOf(vs.currentSpeed) + 1) % speeds.size]
-                            mediaPlayer.rate =
-                                vs.currentSpeed; onShowToast("速度: ${vs.currentSpeed}x")
+                            // 非公式パッチ: 録画プレイヤーと同じ PLAYBACK_SPEEDS を循環し、設定に保存する
+                            val idx = PLAYBACK_SPEEDS.indexOf(vs.currentSpeed).coerceAtLeast(0)
+                            val next = PLAYBACK_SPEEDS[(idx + 1) % PLAYBACK_SPEEDS.size]
+                            setPlaybackSpeed(next); onShowToast("速度: ${next}x")
                         },
                         onSubtitleToggle = {
                             val tracks =
@@ -810,6 +858,7 @@ fun SmbVlcPlayerScreen(
                                 mediaPlayer.spuTrack =
                                     if (vs.isSubtitleEnabled) tracks.first().id else -1
                                 onShowToast("字幕: ${if (vs.isSubtitleEnabled) "表示" else "非表示"}")
+                                settingsViewModel.updateSmbSubtitleEnabled(vs.isSubtitleEnabled) // 非公式パッチ
                             } else onShowToast("字幕トラックがありません")
                         },
                         onQualitySelect = { onSubMenuToggle(false) },

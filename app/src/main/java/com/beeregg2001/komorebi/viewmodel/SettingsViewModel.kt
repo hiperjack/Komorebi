@@ -390,6 +390,14 @@ class SettingsViewModel @Inject constructor(
         settingsRepository.saveString(SettingsRepository.VIDEO_PLAYBACK_SPEED, value)
     }
 
+    // 非公式パッチ: SMB 再生の字幕 ON/OFF (前回の状態を維持)
+    val smbSubtitleEnabled: StateFlow<String> = settingsRepository.smbSubtitleEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "OFF")
+
+    fun updateSmbSubtitleEnabled(enabled: Boolean) = viewModelScope.launch {
+        settingsRepository.saveString(SettingsRepository.SMB_SUBTITLE_ENABLED, if (enabled) "ON" else "OFF")
+    }
+
     // ★ 追加: Cloudflare Zero Trust サービストークン
     val cfAccessClientId: StateFlow<String> = settingsRepository.cfAccessClientId
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")

@@ -59,9 +59,6 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 private const val TAG = "VideoPlayerScreen"
-
-// 非公式パッチ: CH+/CH- (チャンネルボタン) とサブメニューで切り替える再生速度の段階
-private val PLAYBACK_SPEEDS = listOf(1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
 private val PLAYER_CONTROLS_SUBTITLE_OFFSET = 96.dp
 
 /**

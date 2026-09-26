@@ -34,6 +34,10 @@ enum class StreamQuality(val label: String, val apiParams: String) {
     }
 }
 
+// 非公式パッチ: CH+/CH- (チャンネルボタン) とサブメニューで切り替える再生速度の段階
+// (録画プレイヤーと SMB プレイヤーで共有し、選択値は SettingsRepository.VIDEO_PLAYBACK_SPEED に保存する)
+val PLAYBACK_SPEEDS = listOf(1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+
 data class IndicatorState(
     val icon: ImageVector,
     val label: String,

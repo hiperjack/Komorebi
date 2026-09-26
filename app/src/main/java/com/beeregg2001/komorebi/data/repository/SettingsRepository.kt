@@ -64,6 +64,8 @@ class SettingsRepository @Inject constructor(
         val AUDIO_OUTPUT_MODE = stringPreferencesKey("audio_output_mode")
         // 非公式パッチ: ビデオ再生速度 (ファイルをまたいで維持する)
         val VIDEO_PLAYBACK_SPEED = stringPreferencesKey("video_playback_speed")
+        // 非公式パッチ: ファイルライブラリ (SMB) 再生の字幕 ON/OFF (前回の状態を維持)
+        val SMB_SUBTITLE_ENABLED = stringPreferencesKey("smb_subtitle_enabled")
 
         val PLAYER_UI_MODE = stringPreferencesKey("player_ui_mode")
         val AUTO_CM_SKIP = stringPreferencesKey("auto_cm_skip")
@@ -176,6 +178,9 @@ class SettingsRepository @Inject constructor(
     // 非公式パッチ: ビデオ再生速度 (ファイルをまたいで維持する)
     val videoPlaybackSpeed: Flow<String> =
         context.dataStore.data.map { it[VIDEO_PLAYBACK_SPEED] ?: "1.0" }
+    // 非公式パッチ: SMB 再生の字幕 ON/OFF
+    val smbSubtitleEnabled: Flow<String> =
+        context.dataStore.data.map { it[SMB_SUBTITLE_ENABLED] ?: "OFF" }
 
     val playerUiMode: Flow<String> = context.dataStore.data.map { it[PLAYER_UI_MODE] ?: "MODERN" }
     val autoCmSkip: Flow<String> = context.dataStore.data.map { it[AUTO_CM_SKIP] ?: "OFF" }
