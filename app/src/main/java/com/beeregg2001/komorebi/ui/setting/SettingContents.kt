@@ -901,6 +901,8 @@ fun HomeDisplaySettingsContent(
             "SUMMER" -> AppStrings.SETTINGS_VALUE_SEASON_SUMMER
             "AUTUMN" -> AppStrings.SETTINGS_VALUE_SEASON_AUTUMN
             "WINTER" -> AppStrings.SETTINGS_VALUE_SEASON_WINTER
+            // 非公式パッチ: EPGStation 風の青系テーマ
+            "BLUE" -> AppStrings.SETTINGS_VALUE_SEASON_BLUE
             "KOMOREBI_DAY" -> "木漏れ日"
             "KOMOREBI_NIGHT" -> "月光"
             "KYLE_DAY" -> "海辺のカイル"

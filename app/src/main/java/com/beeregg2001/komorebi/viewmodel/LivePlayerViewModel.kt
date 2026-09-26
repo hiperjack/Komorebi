@@ -91,6 +91,16 @@ class LivePlayerViewModel @Inject constructor(
         private const val MAX_AUTO_RETRY = 2
     }
 
+    /**
+     * 非公式パッチ: SSE (events) 接続が HTTP エラーで失敗したときに、ステータスコードを
+     * PlaybackException の cause として運ぶための例外。ExoPlayer 側の
+     * HttpDataSource.InvalidResponseCodeException と同様に handleMainError/handleDualError で
+     * コード判定 (404 リトライ、422 の original 画質フォールバック) に使う。
+     * 以前は SSE 経路の 422 では cause が null だったため、KonomiTV が original 画質に
+     * 非対応でもフォールバックせず毎回エラー表示になっていた。
+     */
+    class SseHttpStatusException(val code: Int) : Exception("HTTP $code")
+
     private val gson = Gson()
 
     private val _mainPlayer = MutableStateFlow<ExoPlayer?>(null)
@@ -499,8 +509,8 @@ class LivePlayerViewModel @Inject constructor(
     private fun handleMainError(uiContext: Context, error: PlaybackException) {
         viewModelScope.launch {
             val cause = error.cause
-            val is404 =
-                cause is HttpDataSource.InvalidResponseCodeException && cause.responseCode == 404
+            val httpCode = httpStatusCodeOf(cause)
+            val is404 = httpCode == 404
             val isEdcbTranscode = mainCurrentSource == StreamSource.EDCB && !mainIsEdcbDirect
 
             if (isEdcbTranscode && is404 && mainAutoRetryCount < 5) {
@@ -516,8 +526,7 @@ class LivePlayerViewModel @Inject constructor(
             // masterと正式リリースを区別できないため、実際に拒否されたことを検知して以後隠す
             val isKonomiOriginalRejected = mainCurrentSource == StreamSource.KONOMITV &&
                 mainCurrentQuality?.value == "original" &&
-                cause is HttpDataSource.InvalidResponseCodeException &&
-                cause.responseCode == 422
+                httpCode == 422
             if (isKonomiOriginalRejected && mainCurrentChannel != null) {
                 Log.w(TAG, "KonomiTV rejected Original quality (422). Server does not support it. Falling back.")
                 KonomiOriginalQualityGate.markUnsupported()
@@ -592,8 +601,8 @@ class LivePlayerViewModel @Inject constructor(
     private fun handleDualError(uiContext: Context, error: PlaybackException) {
         viewModelScope.launch {
             val cause = error.cause
-            val is404 =
-                cause is HttpDataSource.InvalidResponseCodeException && cause.responseCode == 404
+            val httpCode = httpStatusCodeOf(cause)
+            val is404 = httpCode == 404
             val isEdcbTranscode = dualCurrentSource == StreamSource.EDCB && !dualIsEdcbDirect
 
             if (isEdcbTranscode && is404 && dualAutoRetryCount < 5) {
@@ -608,8 +617,7 @@ class LivePlayerViewModel @Inject constructor(
             // masterと正式リリースを区別できないため、実際に拒否されたことを検知して以後隠す
             val isKonomiOriginalRejected = dualCurrentSource == StreamSource.KONOMITV &&
                 dualCurrentQuality?.value == "original" &&
-                cause is HttpDataSource.InvalidResponseCodeException &&
-                cause.responseCode == 422
+                httpCode == 422
             if (isKonomiOriginalRejected && dualCurrentChannel != null) {
                 Log.w(TAG, "KonomiTV rejected Original quality (422). Server does not support it. Falling back.")
                 KonomiOriginalQualityGate.markUnsupported()
@@ -1210,7 +1218,7 @@ class LivePlayerViewModel @Inject constructor(
                             uiContext,
                             PlaybackException(
                                 httpStatusErrorMessage(response.code),
-                                null,
+                                SseHttpStatusException(response.code),
                                 PlaybackException.ERROR_CODE_UNSPECIFIED
                             )
                         )
@@ -1290,7 +1298,7 @@ class LivePlayerViewModel @Inject constructor(
                             uiContext,
                             PlaybackException(
                                 httpStatusErrorMessage(response.code),
-                                null,
+                                SseHttpStatusException(response.code),
                                 PlaybackException.ERROR_CODE_UNSPECIFIED
                             )
                         )
@@ -1394,11 +1402,19 @@ class LivePlayerViewModel @Inject constructor(
         else -> String.format(AppStrings.ERR_SERVER_HTTP, code)
     }
 
+    // 非公式パッチ: ExoPlayer 由来 / SSE 由来のどちらの HTTP エラーからもステータスコードを取り出す
+    private fun httpStatusCodeOf(cause: Throwable?): Int? = when (cause) {
+        is HttpDataSource.InvalidResponseCodeException -> cause.responseCode
+        is SseHttpStatusException -> cause.code
+        else -> null
+    }
+
     private fun analyzePlayerError(error: PlaybackException): String {
         val cause = error.cause
         return when {
             cause is HttpDataSource.InvalidResponseCodeException ->
                 httpStatusErrorMessage(cause.responseCode)
+            cause is SseHttpStatusException -> httpStatusErrorMessage(cause.code)
 
             cause is HttpDataSource.HttpDataSourceException -> when (cause.cause) {
                 is java.net.ConnectException -> AppStrings.ERR_CONNECTION_REFUSED

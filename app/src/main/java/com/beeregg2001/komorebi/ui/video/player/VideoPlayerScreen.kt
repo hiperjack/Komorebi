@@ -189,6 +189,11 @@ fun VideoPlayerScreen(
         vs.isAutoCmSkipEnabled = (autoCmSkipStr == "ON")
     }
 
+    // 非公式パッチ: モダンUIでは再生開始時にシークバー/ボタンを出さない (決定/上下キーで表示できる)
+    LaunchedEffect(program.id, isModern) {
+        if (isModern) onShowControlsChange(false)
+    }
+
     // 非公式パッチ: CM自動スキップの控えめな通知の表示状態 (左下に小さく表示して自動で消える)
     var showCmSkipNotice by remember { mutableStateOf(false) }
     LaunchedEffect(showCmSkipNotice) {
