@@ -532,9 +532,10 @@ class LivePlayerViewModel @Inject constructor(
                 KonomiOriginalQualityGate.markUnsupported()
                 val remaining = _availableQualities.value.filterNot { it.value == "original" }
                 _availableQualities.value = remaining
-                val fallback = remaining.firstOrNull {
-                    it.value.contains("720") || it.label.contains("720")
-                } ?: remaining.firstOrNull()
+                // 非公式パッチ: フォールバック先は 1080p (60fps) → 1080p → 先頭 の順 (本家は 720p)
+                val fallback = remaining.firstOrNull { it.value == "1080p-60fps" }
+                    ?: remaining.firstOrNull { it.value == "1080p" }
+                    ?: remaining.firstOrNull()
                 if (fallback != null) {
                     saveLiveQuality(fallback.value)
                     mainCurrentQuality = fallback
@@ -623,9 +624,10 @@ class LivePlayerViewModel @Inject constructor(
                 KonomiOriginalQualityGate.markUnsupported()
                 val remaining = _availableQualities.value.filterNot { it.value == "original" }
                 _availableQualities.value = remaining
-                val fallback = remaining.firstOrNull {
-                    it.value.contains("720") || it.label.contains("720")
-                } ?: remaining.firstOrNull()
+                // 非公式パッチ: フォールバック先は 1080p (60fps) → 1080p → 先頭 の順 (本家は 720p)
+                val fallback = remaining.firstOrNull { it.value == "1080p-60fps" }
+                    ?: remaining.firstOrNull { it.value == "1080p" }
+                    ?: remaining.firstOrNull()
                 if (fallback != null) {
                     saveLiveQuality(fallback.value)
                     dualCurrentQuality = fallback
