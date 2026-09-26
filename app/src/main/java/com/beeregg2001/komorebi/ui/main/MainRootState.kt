@@ -2,6 +2,7 @@ package com.beeregg2001.komorebi.ui.main
 
 import androidx.compose.runtime.*
 import com.beeregg2001.komorebi.data.model.*
+import com.beeregg2001.komorebi.ui.video.smb.SmbItem
 
 enum class AiFocusTicket { NONE, PANEL_DEFAULT }
 
@@ -33,10 +34,15 @@ class MainRootState {
     var currentTabIndex by mutableIntStateOf(0)
     var selectedChannel by mutableStateOf<Channel?>(null)
     var selectedProgram by mutableStateOf<RecordedProgram?>(null)
+
+    // SMB動画を保持
+    var selectedSmbItem by mutableStateOf<SmbItem?>(null)
     var initialPlaybackPositionMs by mutableLongStateOf(0L)
     var epgSelectedProgram by mutableStateOf<EpgProgram?>(null)
     // 録画番組の再生開始処理 (HomeLauncherScreen 表示時に登録。番組表の「録画を再生」から呼ぶ)
     var startRecordedPlayback: ((RecordedProgram) -> Unit)? = null
+
+    var backendType by mutableStateOf("KONOMITV")
 
     // 予約・リスト状態
     var selectedReserve by mutableStateOf<ReserveItem?>(null)
@@ -55,14 +61,20 @@ class MainRootState {
 
     val aiTicketManager = AiFocusTicketManager()
 
-    // ★ 追加: AIコンシェルジュからの復帰シグナル（カウンター）を追加
     var aiFocusReturnTick by mutableIntStateOf(0)
 
     // 各種オーバーレイの開閉状態
     var isEpgJumpMenuOpen by mutableStateOf(false)
     var isSettingsOpen by mutableStateOf(false)
+
+    // ★ 追加: 設定画面を開く際のターゲット指定（ディープリンク用）
+    var settingsInitialCategoryIndex by mutableIntStateOf(0)
+    var settingsInitialFocusItemIndex by mutableStateOf<Int?>(null)
+
     var isRecordListOpen by mutableStateOf(false)
     var isSeriesListOpen by mutableStateOf(false)
+    var isSmbLibraryOpen by mutableStateOf(false)
+
     var showDeleteConfirmDialog by mutableStateOf(false)
 
     var triggerHomeBack by mutableStateOf(false)
@@ -91,6 +103,9 @@ class MainRootState {
     // 再生から戻った際にフォーカスすべき録画番組のID
     var lastPlayedRecordingId by mutableStateOf<Int?>(null)
 
+    // 再生から戻った際にフォーカスすべきSMBファイルのパス
+    var lastPlayedSmbPath by mutableStateOf<String?>(null)
+
     // システム状態
     var isDataReady by mutableStateOf(false)
     var isUiReady by mutableStateOf(false)
@@ -98,7 +113,6 @@ class MainRootState {
     var showConnectionErrorDialog by mutableStateOf(false)
     var hasAppliedStartupTab by mutableStateOf(false)
 
-    // 起動時チャンネルの適用フラグ
     var hasAppliedStartupChannel by mutableStateOf(false)
 
     var editingCondition by mutableStateOf<ReservationCondition?>(null)
@@ -113,7 +127,6 @@ class MainRootState {
         return true
     }
 
-    // ミニプレイヤー中は「フルスクリーンではない」と判定させることで、背面のUIを生かす
     fun isFullScreen(
         channel: Channel?,
         program: RecordedProgram?,
@@ -122,16 +135,19 @@ class MainRootState {
         recordListOpen: Boolean,
         reserveOverlayOpen: Boolean
     ): Boolean {
-        // もしミニプレイヤー（ワイプ）化されているなら、フルスクリーンではない
         if (isMiniPlayerMode) return false
 
-        return channel != null || program != null || epgProgram != null ||
+        return channel != null || program != null || selectedSmbItem != null || epgProgram != null ||
                 settingsOpen || recordListOpen || reserveOverlayOpen ||
-                isSeriesListOpen || isAiConciergeOpen ||
+                isSeriesListOpen || isAiConciergeOpen || isSmbLibraryOpen ||
                 editingCondition != null || selectedConditionReserveItem != null ||
                 selectedReserve != null || editingReserveItem != null ||
                 editingNewProgram != null || reserveToDelete != null ||
                 selectedProgramForAutoReserve != null
+    }
+
+    fun getVisibleTabs(): List<String> {
+        return listOf("ホーム", "ライブ", "ビデオ", "番組表", "録画予約")
     }
 }
 
