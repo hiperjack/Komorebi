@@ -78,6 +78,8 @@ fun ModernEpgCanvasEngine_Smooth(
     onOpenJumpMenuFromGrid: () -> Unit = {},
     // 録画済み番組の枠線描画用 (ローカルDBの録画のチャンネル・放送時間)
     recordedRanges: List<RecordedProgramMatcher.RecordedRange> = emptyList(),
+    // 時間割ジャンプメニューが前面に出ている間 true。グリッドに残ったキー入力で番組を開かないようにする
+    isJumpMenuOpen: Boolean = false,
     settingsViewModel: SettingsViewModel = hiltViewModel()
 ) {
     val density = LocalDensity.current
@@ -301,6 +303,9 @@ fun ModernEpgCanvasEngine_Smooth(
             }
 
             var isContentFocused by remember { mutableStateOf(false) }
+            // 決定キーの KeyDown をこのグリッドで受けたかどうか。ジャンプメニューなど別のオーバーレイで
+            // KeyDown を処理した直後に届く KeyUp だけで番組詳細が開いてしまうのを防ぐ
+            var isCenterKeyDownSeen by remember { mutableStateOf(false) }
 
             Box(
                 modifier = Modifier
@@ -310,8 +315,21 @@ fun ModernEpgCanvasEngine_Smooth(
                     .onFocusChanged {
                         isContentFocused = it.isFocused
                         if (it.isFocused) isHeaderVisible = false
+                        if (!it.isFocused) isCenterKeyDownSeen = false
                     }
                     .onKeyEvent { event ->
+                        val isCenterKey =
+                            event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter
+                        // ジャンプメニュー表示中は決定キーとメニューキーをグリッドでは扱わない
+                        if (isJumpMenuOpen && (isCenterKey || event.key == Key.Menu)) {
+                            isCenterKeyDownSeen = false
+                            return@onKeyEvent true
+                        }
+                        // 最初の KeyDown (repeatCount == 0) だけを「このグリッドで押し始めた」とみなす。
+                        // メニューを閉じた後に届く長押しのリピート KeyDown では番組を開かない
+                        if (isCenterKey && event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) {
+                            isCenterKeyDownSeen = true
+                        }
                         if (event.key == Key.Back) {
                             if (event.type == KeyEventType.KeyDown) {
                                 if (event.nativeKeyEvent.isLongPress) {
@@ -446,9 +464,15 @@ fun ModernEpgCanvasEngine_Smooth(
                         } else if (event.type == KeyEventType.KeyUp) {
                             when (event.key) {
                                 Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
-                                    epgState.currentFocusedProgram?.let {
-                                        if (it.title != "（番組情報なし）") onProgramSelected(it)
-                                    }; true
+                                    // KeyDown をこのグリッドで受けていない KeyUp (メニューを閉じた直後など) は無視する
+                                    val seen = isCenterKeyDownSeen
+                                    isCenterKeyDownSeen = false
+                                    if (seen) {
+                                        epgState.currentFocusedProgram?.let {
+                                            if (it.title != "（番組情報なし）") onProgramSelected(it)
+                                        }
+                                    }
+                                    true
                                 }
 
                                 else -> false

@@ -354,6 +354,8 @@ fun MainRootScreen(
 
     val startupChannelSetting by settingsViewModel.startupChannel.collectAsState()
     var isLongPressHandled by remember { mutableStateOf(false) }
+    // 非公式パッチ: 決定キーの押下が番組表の時間割ジャンプメニュー上で始まったか
+    var isCenterPressStartedInOverlay by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         if (!state.hasAppliedStartupTab) {
@@ -557,6 +559,18 @@ fun MainRootScreen(
                         }
                     }
                     if (state.isAiConciergeOpen || state.showAiKeyboardInput) return@onPreviewKeyEvent false
+                    // 非公式パッチ: 番組表の時間割ジャンプメニューで決定キーを押し始めた場合は、
+                    // 押し続けてもAIコンシェルジュを開かない (メニューは KeyDown で閉じるため、
+                    // 以降のリピート KeyDown がここへ流れてきて誤発動していた)
+                    if (isCenterKey && event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) {
+                        isCenterPressStartedInOverlay = state.isEpgJumpMenuOpen
+                    }
+                    if (isCenterKey && event.type == KeyEventType.KeyUp) {
+                        if (isCenterPressStartedInOverlay) {
+                            isCenterPressStartedInOverlay = false; return@onPreviewKeyEvent false
+                        }
+                    }
+                    if (isCenterKey && isCenterPressStartedInOverlay) return@onPreviewKeyEvent false
                     if (isCenterKey && event.type == KeyEventType.KeyDown) {
                         if ((event.nativeKeyEvent.isLongPress || event.nativeKeyEvent.repeatCount > 0) && !isLongPressHandled) {
                             isLongPressHandled = true; state.isAiConciergeOpen = true

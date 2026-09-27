@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.*
 import com.beeregg2001.komorebi.common.safeRequestFocus
+import com.beeregg2001.komorebi.common.safeRequestFocusWithRetry
 import com.beeregg2001.komorebi.ui.epg.logic.EpgTimeSlots
 import com.beeregg2001.komorebi.ui.theme.KomorebiTheme
 import kotlinx.coroutines.delay
@@ -79,7 +80,11 @@ fun EpgJumpMenu(
         val slot = EpgTimeSlots.slotIndexOf(initialTime)
         listState.scrollToItem((row - 4).coerceAtLeast(0))
         delay(100)
-        focusRequesters[row][slot].safeRequestFocus("EpgJumpMenu_Initial")
+        // LazyColumn の行がまだ構築されていないと requestFocus が失敗し、フォーカスが背面の番組表グリッドに
+        // 残ったままになる (決定キーが背面の番組に届いてしまう)。成功するまで数回リトライする
+        focusRequesters[row][slot].safeRequestFocusWithRetry(
+            tag = "EpgJumpMenu_Initial", maxRetries = 10, delayMillis = 80
+        )
     }
 
     Box(
@@ -95,6 +100,8 @@ fun EpgJumpMenu(
                 }
                 false
             }
+            // 十字キー探索でメニューの外 (背面の番組表) へフォーカスが抜けないようにする
+            .focusProperties { exit = { FocusRequester.Cancel } }
             .focusGroup(),
         contentAlignment = Alignment.Center
     ) {

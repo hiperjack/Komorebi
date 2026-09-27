@@ -47,6 +47,7 @@ import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.tv.material3.*
 import com.beeregg2001.komorebi.common.safeRequestFocus
+import com.beeregg2001.komorebi.common.safeRequestFocusWithRetry
 import com.beeregg2001.komorebi.data.model.EpgProgram
 import com.beeregg2001.komorebi.data.model.ReserveItem
 import com.beeregg2001.komorebi.ui.epg.components.EpgSearchResultsScreen
@@ -279,6 +280,7 @@ fun EpgNavigationContainer(
                     },
                     onRequestTime = requestTime,
                     recordedRanges = recordedRanges,
+                    isJumpMenuOpen = isJumpMenuOpen,
                     onOpenJumpMenuFromGrid = {
                         jumpMenuOpenedFromGrid = true
                         onJumpMenuStateChanged(true)
@@ -294,7 +296,9 @@ fun EpgNavigationContainer(
                             onUpdateTargetTime(now)
 
                             delay(400)
-                            gridFocusRequester.safeRequestFocus("EpgNav_JumpNow")
+                            gridFocusRequester.safeRequestFocusWithRetry(
+                                tag = "EpgNav_JumpNow", maxRetries = 8, delayMillis = 100
+                            )
                             isInternalJumping = false
                         }
                     },
@@ -595,7 +599,9 @@ fun EpgNavigationContainer(
                         onUpdateTargetTime(selectedTime)
 
                         delay(400)
-                        gridFocusRequester.safeRequestFocus("EpgNav_JumpSelect")
+                        gridFocusRequester.safeRequestFocusWithRetry(
+                            tag = "EpgNav_JumpSelect", maxRetries = 8, delayMillis = 100
+                        )
                         isInternalJumping = false
                     }
                 },
